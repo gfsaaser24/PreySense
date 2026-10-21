@@ -1,0 +1,354 @@
+using System.ComponentModel;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using PreySense.Frontend.ViewModels;
+
+namespace PreySense.Frontend.Views
+{
+    public partial class KeyboardWindow : Window
+    {
+        private bool _isUpdatingHexText = false;
+        private bool _isLoaded = false;
+        private string _pendingLightingEffectTag = "HW:0";
+        private MainViewModel? _boundVm;
+
+        public KeyboardWindow()
+        {
+            InitializeComponent();
+            Loaded += KeyboardWindow_Loaded;
+            Closed += KeyboardWindow_Closed;
+        }
+
+        private void KeyboardWindow_Loaded(object sender, RoutedEventArgs e)
+        {
+            if (DataContext is MainViewModel vm)
+            {
+                BindLightingViewModel(vm);
+
+                // Tab Selection
+                if (TabLightingTarget != null)
+                {
+                    TabLightingTarget.SelectedIndex = vm.IsCoverTabSelected ? 1 : 0;
+                }
+
+                // Initialize Keyboard Color Wheel & Hex Input
+                try
+                {
+                    var drawingColor = System.Drawing.ColorTranslator.FromHtml(vm.SelectedHexColor);
+                    ColorWheel.SelectedColor = System.Windows.Media.Color.FromRgb(drawingColor.R, drawingColor.G, drawingColor.B);
+                    if (TextHexColorInput != null) TextHexColorInput.Text = vm.SelectedHexColor;
+                }
+                catch { }
+
+                // Cover Mode ComboBox Selection
+                switch (vm.CoverLightingMode)
+                {
+                    case 2: ComboCoverMode.SelectedIndex = 1; break; // Breathing
+                    case 3: ComboCoverMode.SelectedIndex = 2; break; // Neon
+                    default: ComboCoverMode.SelectedIndex = 0; break; // Static
+                }
+
+                UpdateCoverModePanels(vm.CoverLightingMode);
+
+                // Initialize Cover Color Wheel & Hex Input
+                try
+                {
+                    var drawingColor = System.Drawing.ColorTranslator.FromHtml(vm.CoverHexColor);
+                    CoverColorWheel.SelectedColor = System.Windows.Media.Color.FromRgb(drawingColor.R, drawingColor.G, drawingColor.B);
+                    if (TextCoverHexColorInput != null) TextCoverHexColorInput.Text = vm.CoverHexColor;
+                }
+                catch { }
+
+                RestoreLightingModeUi(vm);
+                _isLoaded = true;
+            }
+        }
+
+        private void RestoreLightingModeUi(MainViewModel vm)
+        {
+            string tag = vm.LightingEffectTag;
+            bool dynamic = tag.StartsWith("DYN:", StringComparison.Ordinal) ||
+                           (tag.StartsWith("HW:", StringComparison.Ordinal) && tag != "HW:0");
+
+            if (ComboLightingMode != null)
+                ComboLightingMode.SelectedIndex = dynamic ? 1 : 0;
+
+            if (PanelStaticControls != null)
+                PanelStaticControls.Visibility = dynamic ? Visibility.Collapsed : Visibility.Visible;
+            if (PanelDynamicControls != null)
+                PanelDynamicControls.Visibility = dynamic ? Visibility.Visible : Visibility.Collapsed;
+
+            if (dynamic && ComboAnimationSelect != null)
+            {
+                for (int i = 0; i < ComboAnimationSelect.Items.Count; i++)
+                {
+                    if (ComboAnimationSelect.Items[i] is ComboBoxItem item &&
+                        item.Tag is string itemTag &&
+                        string.Equals(itemTag, tag, StringComparison.Ordinal))
+                    {
+                        ComboAnimationSelect.SelectedIndex = i;
+                        break;
+                    }
+                }
+            }
+
+            _pendingLightingEffectTag = tag;
+        }
+
+        private void CoverColorWheel_ColorChanged(object? sender, System.Windows.Media.Color color)
+        {
+            if (!_isLoaded || DataContext is not MainViewModel vm)
+                return;
+
+            string hex = $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+            vm.CoverHexColor = hex;
+            if (!_isUpdatingHexText && TextCoverHexColorInput != null)
+            {
+                _isUpdatingHexText = true;
+                TextCoverHexColorInput.Text = hex;
+                _isUpdatingHexText = false;
+            }
+        }
+
+        private void TextCoverHexColorInput_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (_isUpdatingHexText || DataContext is not MainViewModel vm) return;
+            string text = TextCoverHexColorInput.Text?.Trim() ?? "";
+            if (!text.StartsWith("#")) text = "#" + text;
+            if (text.Length == 7)
+            {
+                try
+                {
+                    var col = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(text);
+                    vm.CoverHexColor = text;
+                    _isUpdatingHexText = true;
+                    CoverColorWheel.SelectedColor = col;
+                    _isUpdatingHexText = false;
+                }
+                catch { }
+            }
+        }
+
+        private void ComboCoverMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!_isLoaded) return;
+            if (ComboCoverMode?.SelectedItem is ComboBoxItem item && item.Tag is string tag && DataContext is MainViewModel vm)
+            {
+                vm.SetCoverModeCommand.Execute(tag);
+                if (int.TryParse(tag, out int mode))
+                {
+                    UpdateCoverModePanels(mode);
+                }
+            }
+        }
+
+        private void ComboCoverPresets_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (ComboCoverPresets?.SelectedItem is ComboBoxItem item && item.Tag is string preset && preset != "None" && DataContext is MainViewModel vm)
+            {
+                vm.ApplyCoverPresetCommand.Execute(preset);
+                try
+                {
+                    var drawingColor = System.Drawing.ColorTranslator.FromHtml(vm.CoverHexColor);
+                    CoverColorWheel.SelectedColor = System.Windows.Media.Color.FromRgb(drawingColor.R, drawingColor.G, drawingColor.B);
+                    if (TextCoverHexColorInput != null) TextCoverHexColorInput.Text = vm.CoverHexColor;
+                }
+                catch { }
+            }
+        }
+
+        private void BindLightingViewModel(MainViewModel vm)
+        {
+            if (_boundVm != null)
+                _boundVm.PropertyChanged -= OnLightingVmPropertyChanged;
+            _boundVm = vm;
+            _boundVm.PropertyChanged += OnLightingVmPropertyChanged;
+        }
+
+        private void KeyboardWindow_Closed(object? sender, EventArgs e)
+        {
+            if (_boundVm == null)
+                return;
+            _boundVm.PropertyChanged -= OnLightingVmPropertyChanged;
+            _boundVm = null;
+        }
+
+        private void OnLightingVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if ((e.PropertyName == nameof(MainViewModel.IsCoverSyncWithKeyboard) ||
+                 e.PropertyName == nameof(MainViewModel.CoverLightingMode)) &&
+                DataContext is MainViewModel vm)
+            {
+                UpdateCoverModePanels(vm.CoverLightingMode);
+            }
+        }
+
+        private void UpdateCoverModePanels(int coverMode)
+        {
+            bool isStatic = coverMode <= 1;
+            bool sync = DataContext is MainViewModel vm && vm.IsCoverSyncWithKeyboard;
+            if (PanelCoverColorWheel != null)
+            {
+                PanelCoverColorWheel.Visibility = (isStatic && !sync)
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+            }
+            if (PanelCoverSpeed != null)
+            {
+                PanelCoverSpeed.Visibility = (!isStatic && !sync)
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+            }
+        }
+
+        private void TitleBar_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ChangedButton == MouseButton.Left)
+            {
+                DragMove();
+            }
+        }
+
+        private void CloseButton_Click(object sender, RoutedEventArgs e)
+        {
+            Close();
+        }
+
+        private void Zone1_Click(object sender, RoutedEventArgs e)
+        {
+            SelectZone(1);
+        }
+
+        private void Zone2_Click(object sender, RoutedEventArgs e)
+        {
+            SelectZone(2);
+        }
+
+        private void Zone3_Click(object sender, RoutedEventArgs e)
+        {
+            SelectZone(3);
+        }
+
+        private void Zone4_Click(object sender, RoutedEventArgs e)
+        {
+            SelectZone(4);
+        }
+
+        private void SelectZone(int zone)
+        {
+            if (DataContext is MainViewModel vm)
+            {
+                vm.SelectedRgbZone = zone;
+                SyncKeyboardColorInputs(vm);
+            }
+        }
+
+        private void SyncKeyboardColorInputs(MainViewModel vm)
+        {
+            try
+            {
+                var drawingColor = System.Drawing.ColorTranslator.FromHtml(vm.SelectedHexColor);
+                _isUpdatingHexText = true;
+                ColorWheel.SelectedColor = System.Windows.Media.Color.FromRgb(drawingColor.R, drawingColor.G, drawingColor.B);
+                if (TextHexColorInput != null)
+                    TextHexColorInput.Text = vm.SelectedHexColor;
+                _isUpdatingHexText = false;
+            }
+            catch
+            {
+                _isUpdatingHexText = false;
+            }
+        }
+
+        private void ComboLightingMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!_isLoaded || PanelStaticControls == null || PanelDynamicControls == null) return;
+
+            if (ComboLightingMode.SelectedIndex == 0) // Static
+            {
+                PanelStaticControls.Visibility = Visibility.Visible;
+                PanelDynamicControls.Visibility = Visibility.Collapsed;
+                _pendingLightingEffectTag = "HW:0";
+                if (DataContext is MainViewModel staticVm)
+                    staticVm.SetLightingEffect(_pendingLightingEffectTag);
+            }
+            else // Dynamic
+            {
+                PanelStaticControls.Visibility = Visibility.Collapsed;
+                PanelDynamicControls.Visibility = Visibility.Visible;
+                if (ComboAnimationSelect?.SelectedItem is ComboBoxItem item && item.Tag is string tag)
+                {
+                    _pendingLightingEffectTag = tag;
+                    if (DataContext is MainViewModel dynVm)
+                        dynVm.SetLightingEffect(tag);
+                }
+            }
+        }
+
+        private void ComboAnimationSelect_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!_isLoaded) return;
+            if (ComboAnimationSelect?.SelectedItem is ComboBoxItem item && item.Tag is string tag)
+            {
+                _pendingLightingEffectTag = tag;
+                if (DataContext is MainViewModel vm)
+                    vm.SetLightingEffect(tag);
+            }
+        }
+
+        private void ColorWheel_ColorChanged(object? sender, System.Windows.Media.Color color)
+        {
+            if (!_isLoaded || DataContext is not MainViewModel vm)
+                return;
+
+            string hex = $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+            vm.DiscardPendingZonePreset();
+            vm.SelectedHexColor = hex;
+            if (!_isUpdatingHexText && TextHexColorInput != null)
+            {
+                _isUpdatingHexText = true;
+                TextHexColorInput.Text = hex;
+                _isUpdatingHexText = false;
+            }
+        }
+
+        private void TextHexColorInput_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (_isUpdatingHexText || DataContext is not MainViewModel vm) return;
+            vm.DiscardPendingZonePreset();
+            string text = TextHexColorInput.Text?.Trim() ?? "";
+            if (!text.StartsWith("#")) text = "#" + text;
+            if (text.Length == 7)
+            {
+                try
+                {
+                    var col = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(text);
+                    vm.SelectedHexColor = text;
+                    _isUpdatingHexText = true;
+                    ColorWheel.SelectedColor = col;
+                    _isUpdatingHexText = false;
+                }
+                catch { }
+            }
+        }
+
+        private void ComboPresetStatic_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!_isLoaded) return;
+            if (ComboPresetStatic?.SelectedItem is ComboBoxItem item && item.Tag is string preset && preset != "None" && DataContext is MainViewModel vm)
+            {
+                vm.ApplyZonePresetCommand.Execute(preset);
+                try
+                {
+                    _isUpdatingHexText = true;
+                    var drawingColor = System.Drawing.ColorTranslator.FromHtml(vm.SelectedHexColor);
+                    ColorWheel.SelectedColor = System.Windows.Media.Color.FromRgb(drawingColor.R, drawingColor.G, drawingColor.B);
+                    if (TextHexColorInput != null) TextHexColorInput.Text = vm.SelectedHexColor;
+                    _isUpdatingHexText = false;
+                }
+                catch { _isUpdatingHexText = false; }
+            }
+        }
+    }
+}

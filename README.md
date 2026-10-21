@@ -1,80 +1,83 @@
-# <img src="app/appicon.svg" alt="PreySense logo" width="42" height="42" align="left"> PreySense
+# <img src="PreySense.Frontend/appicon.svg" alt="PreySense logo" width="42" height="42" align="left"> PreySense
 
-PreySense is a lightweight Windows utility for Acer Predator laptops, forked from G-Helper. It provides quick, direct control over performance modes, fans, GPU overclocking, RGB lighting, display options, and a custom hardware overlay,completely bypassing the bloated official Predator Sense software.
+PreySense is a Windows utility for Acer Predator laptops. It replaces the official Predator Sense suite.
 
-This project is experimental and hardware-specific. It has been developed and tested on limited Acer Predator models, so compatibility with other Acer laptops is not guaranteed.
+Developed and verified on the **Acer Predator Helios Neo 16S (`PHN16S-71-98RF`)**. Other Predator models may work; that is not guaranteed.
 
 <p align="center">
-  <img src="docs/pics/Prey Sense.png" alt="Prey Sense Interface" width="380"><br>
-  <b>PreySense Interface</b>
+  <img src="pics/PreySense.png" alt="PreySense Dashboard" width="700">
+  <br>
+  <em>PreySense Main Dashboard &amp; Hardware Controls</em>
 </p>
+
+<p align="center">
+  <img src="pics/Overlay.png" alt="PreySense Hardware OSD Overlay" width="550">
+  <br>
+  <em>PreySense Real-Time Hardware OSD &amp; Telemetry Overlay</em>
+</p>
+
+## Contents
+
+- [Features](#features)
+- [Requirements](#requirements)
+- [Install and run](#install-and-run)
+- [OpenCore](#opencore)
+- [Building](#building)
+- [Disclaimer](#disclaimer)
 
 ## Features
 
-- **Performance Modes**: Cycle between **Eco**, **Silent**, **Balanced**, **Performance**, and **Turbo**.
-- **Per-Mode Customization**: Mode-based CPU power limits, GPU offsets, and custom fan curves. Use Ctrl for point snapping in fan curves.
-- **CPU & GPU Tuning**:
-  - Direct CPU power limit (PL1 / PL2) controls.
-  - NVIDIA GPU core and memory clock overclocking offsets.
-- **GPU Mode Switching**: Toggles between **Endurance** (iGPU only), **Standard** (iGPU + dGPU), and **Ultimate** (dGPU exclusive). Includes an automatic iGPU switch toggle on battery.
-- **Predator Key Integration**: Full physical mode-switch key and custom shortcuts support. Use Predator Key + 1-5 to switch performance modes.
-- **Display Configurations**: Automatic display refresh-rate switching, LCD overdrive controls, and refresh-rate color profiles.
-- **Battery Management**: Charge limit controls to preserve battery lifespan.
-- **Keyboard RGB Control**: RGB control for keyboard.
-- **Compact Hardware Overlay**: A styled HUD showing real-time CPU/GPU temperatures, fan RPMs, power draw, RAM/VRAM utilization, FPS counter, and power graphs.
-<p align="center">
-  <img src="docs/pics/Overlay.png" alt="Prey Sense Overlay" width="380"><br>
-  <b>Hardware Performance Overlay</b>
-</p>
+- **Performance modes** — Quiet (AC) / Eco (battery), Balanced, Performance, and Turbo, including the chassis Mode / Turbo key
+- **Per-mode CPU and GPU power** — watt and thermal limits for each performance mode (requires OpenCore)
+- **GPU display switching** — Optimus, Automatic, Advanced Optimus (no reboot), and dGPU Only (reboot)
+- **Fans** — Auto, Max, or custom CPU/GPU speed, independent of the performance mode
+- **Lighting** — four-zone keyboard and cover logo, hardware effects, custom animations (Rainbow Cycle, CPU Heatmap, Battery Fuel Gauge, Police Strobe, Fire Ember, Matrix Cascade, Cylon Scanner, Aurora Drift, Ocean Tide, Heartbeat, Lightning Storm, Starlight, Ice Crystal), optional logo sync
+- **Game profiles** — apply a mode and power limits when a watched game starts; restore when it exits
+- **Hardware overlay** — always-on-top CPU/GPU stats, optional graphs, and FPS
+- **Display** — refresh rate, LCD overdrive, BlueLight Shield
+- **Battery** — 80% charge limit and USB power-off charging cutoff
+- **Startup and tray** — run on Windows startup, hide to the tray, Predator key to show or hide
+- **OpenCore installer** — optional boot-drive or USB install from Settings for live power limits
 
 ## Requirements
 
-- **OS**: Windows 10 or Windows 11 x64.
-- **Hardware**: Acer Predator laptop with compatible Acer WMI and AcerService interfaces.
-- **Runtime**: Microsoft [.NET 10 Windows Desktop Runtime x64](https://dotnet.microsoft.com/download/dotnet/10.0).
-- **CPU Tuning**: [PawnIO](https://pawnio.eu/) driver installed for low-level CPU MSR/power limit access.
-- **RGB Tuning**: Predator Sense service components installed for Keyboard RGB control.
+- Windows 10 or 11 x64
+- Acer Predator laptop
+- [Microsoft .NET 10 Windows Desktop Runtime x64](https://dotnet.microsoft.com/download/dotnet/10.0)
+- Run **as administrator**
 
-## Download & Running
+## Install and run
 
-1. Download the latest release.
-2. Run `PreySense.exe` as administrator.
+1. Download the latest `PreySense.exe`.
+2. Run it as administrator. A second launch brings the existing instance to the front.
+3. Close official Predator Sense if it is running.
+4. For CPU/GPU watt limits, install OpenCore from **Settings** and set PreySense first in the BIOS boot order.
 
-## Building From Source
+Closing the window hides to the tray. **Quit** exits.
 
-Prerequisite: Install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
+## OpenCore
+
+OpenCore is optional. Without it, modes, fans, lighting, GPU switching, and the overlay still work. CPU/GPU watt limits and game auto-apply stay locked until OpenCore is loaded and ACPI Override is turned on in Settings.
+
+**Install to Boot Drive** (from Settings):
+
+1. PreySense creates a small hidden EFI partition labeled `PREYSENSE`.
+2. Reboot into BIOS. Set a supervisor password if asked.
+3. Enroll the PreySense EFI files as trusted for execution.
+4. Put PreySense first in the boot order. Save and exit.
+
+USB install is the same files on a FAT32 stick; use the boot menu and unplug to revert.
+
+## Building
+
+Prerequisite: [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 
 ```powershell
-dotnet build app\PreySense.csproj
+powershell -NoProfile -ExecutionPolicy Bypass -File .github\publish.ps1
 ```
 
-## Technical Documentation
-
-Detailed documentation on WMI calls, offsets, and lighting controls can be found under the `docs` folder:
-
-- [Acer WMI Documentation](docs/acer_wmi_documentation.md)
-- [Acer Service RGB Protocol](docs/acer_service_rgb.md)
-- [Discovered WMI Offsets](docs/discovered_offsets.md)
-
-### Registry State
-
-User profiles, custom fan curves, and application states are stored under:
-
-```text
-HKCU\SOFTWARE\PreySense
-```
-
-## Contributing
-
-Contributions are welcome, especially for:
-
-- Hardware compatibility reports for additional Acer Predator models.
-- WMI and AcerService packet documentation.
-- Safe fallbacks for unsupported hardware configurations.
-- UI/UX polish, styling, and accessibility.
-
-Please include your **laptop model, BIOS version, Windows version, and GPU mode** when reporting issues or submitting changes.
+The output is `dist\PreySense.exe`.
 
 ## Disclaimer
 
-PreySense controls low-level laptop hardware behavior (fans, power limits, clocks). Use it at your own risk. Incorrect settings may cause system instability or unexpected behavior.
+PreySense changes fans, power limits, and firmware-visible system state. Wrong settings can cause throttling, shutdowns, or instability. Use at your own risk.

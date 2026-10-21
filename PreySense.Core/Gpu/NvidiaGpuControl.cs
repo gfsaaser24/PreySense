@@ -1,0 +1,324 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading.Tasks;
+using NvAPIWrapper.GPU;
+using NvAPIWrapper.Native;
+using NvAPIWrapper.Native.GPU;
+using NvAPIWrapper.Native.GPU.Structures;
+using NvAPIWrapper.Native.Interfaces.GPU;
+using PreySense;
+
+namespace PreySense.Gpu
+{
+    public class NvidiaGpuControl : IGpuControl
+    {
+        private static readonly Lazy<NvidiaGpuControl> SharedLazy = new(() => new NvidiaGpuControl(), true);
+        public static NvidiaGpuControl Shared => SharedLazy.Value;
+
+        private static PhysicalGPU? _internalGpu;
+
+        public NvidiaGpuControl()
+        {
+            _internalGpu = GetInternalDiscreteGpu();
+        }
+
+        public bool IsValid => _internalGpu != null;
+        public bool IsNvidia => IsValid;
+        public string FullName => _internalGpu != null ? _internalGpu.FullName : "NVIDIA GPU";
+
+        public int? _lastTemp;
+        public int _lastTempTime = 0;
+
+        private static bool verboseLog = false;
+
+        private enum GpuState { Active, Asleep, Off }
+
+        private GpuState _lastState = GpuState.Off;
+        private long _lastStateTime = -StateCacheMs;
+        private const int StateCacheMs = 500;
+        private const int InactiveStateCacheMs = 5_000;
+
+        private GpuState GetGpuState()
+        {
+            if (!IsValid) return GpuState.Off;
+            int cacheMs = _lastState == GpuState.Active ? StateCacheMs : InactiveStateCacheMs;
+            if (Environment.TickCount64 - _lastStateTime < cacheMs) return _lastState;
+            try
+            {
+                var perfState = GPUApi.GetCurrentPerformanceState(_internalGpu!.Handle);
+                if (verboseLog) AppLogger.Log($"GPU: {perfState}");
+                _lastState = GpuState.Active;
+            }
+            catch (Exception ex)
+            {
+                if (verboseLog) AppLogger.Log($"GPU: {ex.Message}");
+                _lastState = ex.Message == "NVAPI_GPU_NOT_POWERED" ? GpuState.Asleep : GpuState.Off;
+            }
+            _lastStateTime = Environment.TickCount64;
+            return _lastState;
+        }
+
+        public int? ReadCurrentTemperature(bool log = false, bool forceWake = false)
+        {
+            if (!IsValid) return null;
+
+            // Don't wake the dGPU just to read temperature
+            if (!forceWake)
+            {
+                var state = GetGpuState();
+                if (state != GpuState.Active) return null;
+            }
+
+            try
+            {
+                var thermalSettings = GPUApi.GetThermalSettings(_internalGpu!.Handle);
+                if (thermalSettings.Sensors is null) return null;
+
+                IThermalSensor? gpuSensor = thermalSettings.Sensors
+                    .FirstOrDefault(s => s.Target == ThermalSettingsTarget.GPU);
+
+                if (log || verboseLog) AppLogger.Log($"GPU Temp: {gpuSensor?.CurrentTemperature}C");
+                return gpuSensor?.CurrentTemperature;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private Task<int?>? _readTask;
+
+        public int? GetCurrentTemperature()
+        {
+            if (!IsValid) return null;
+
+            var state = GetGpuState();
+            if (state == GpuState.Off) return null;
+
+            if ((_readTask?.IsCompleted ?? true) && (state == GpuState.Active || ShouldRefresh()))
+            {
+                _readTask = Task.Run(() =>
+                {
+                    var temp = ReadCurrentTemperature();
+                    if (temp is not null)
+                    {
+                        _lastTemp = temp;
+                        _lastTempTime = Environment.TickCount;
+                    }
+                    return temp;
+                });
+            }
+
+            return _lastTemp;
+        }
+
+        private bool ShouldRefresh()
+        {
+            const int minInterval = 5_000;
+
+            if (_lastTemp is null) return true;
+
+            // Simple default temperature delta logic since CPU temp is not accessible globally
+            var refresh = Environment.TickCount > _lastTempTime + minInterval;
+            if (verboseLog) AppLogger.Log($"GPU Temp Refresh: {refresh}");
+            return refresh;
+        }
+
+        public void Dispose()
+        {
+            _internalGpu = null;
+        }
+
+        private static readonly HashSet<string> _systemProcessNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "dwm", "csrss", "winlogon", "services", "lsass", "smss", "wininit",
+            "svchost", "fontdrvhost", "igfxem", "igfxhk", "igfxext",
+            "nvcontainer", "nvdisplay.container", "nvsettings", "nvspcaps64",
+            "nvsphelper64", "nvwmi64", "nvcplui", "atieclxx", "atiesrxx",
+            "explorer", "taskhostw", "sihost", "runtimebroker", "shellexperiencehost",
+            "searchhost", "startmenuexperiencehost", "textinputhost",
+            "applicationframehost", "systemsettings", "dllhost", "conhost",
+            "audiodg", "ctfloader", "spoolsv", "wlanext", "msdtc",
+        };
+
+        public void KillGPUApps()
+        {
+            if (!IsValid) return;
+            PhysicalGPU internalGpu = _internalGpu!;
+
+            int currentPid = Process.GetCurrentProcess().Id;
+
+            try
+            {
+                Process[] processes = internalGpu.GetActiveApplications();
+                foreach (Process process in processes)
+                    try
+                    {
+                        if (process.Id == currentPid) continue;
+                        if (process.SessionId == 0) continue;
+                        if (_systemProcessNames.Contains(process.ProcessName)) continue;
+
+                        AppLogger.Log("Kill:" + process.ProcessName);
+                        process.Kill();
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLogger.Log(ex.Message);
+                    }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log(ex.Message);
+            }
+        }
+
+        private static bool RunPowershellCommand(string script, int timeoutMs = 0)
+        {
+            try
+            {
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = "powershell",
+                    Arguments = $"-NoProfile -ExecutionPolicy Bypass -Command \"{script}\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using var process = Process.Start(startInfo);
+                if (process != null)
+                {
+                    if (timeoutMs > 0) process.WaitForExit(timeoutMs);
+                    else process.WaitForExit();
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log(ex.ToString());
+                return false;
+            }
+        }
+
+        public static void RestartNVService()
+        {
+            RunPowershellCommand(@"Restart-Service -Name 'NVDisplay.ContainerLocalSystem' -Force", 30000);
+            RunPowershellCommand(@"Restart-Service -Name 'NvContainerLocalSystem' -Force", 30000);
+        }
+
+        public static void StopNVService()
+        {
+            RunPowershellCommand(@"Stop-Service -Name 'NvContainerLocalSystem' -Force", 30000);
+            RunPowershellCommand(@"Stop-Service -Name 'NVDisplay.ContainerLocalSystem' -Force", 30000);
+        }
+
+        private static PhysicalGPU? GetInternalDiscreteGpu()
+        {
+            try
+            {
+                return PhysicalGPU
+                    .GetPhysicalGPUs()
+                    .FirstOrDefault(gpu =>
+                        gpu.FullName.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase) &&
+                        gpu.SystemType != SystemType.Unknown);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex.Message);
+                return null;
+            }
+        }
+
+        public int? GetGpuUse()
+        {
+            if (!IsValid) return null;
+            if (GetGpuState() != GpuState.Active) return null;
+
+            try
+            {
+                PhysicalGPU internalGpu = _internalGpu!;
+                IUtilizationDomainInfo? gpuUsage = GPUApi.GetUsages(internalGpu.Handle).GPU;
+                return (int?)gpuUsage?.Percentage;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public float? GetGpuPower()
+        {
+            if (!IsValid) return null;
+            var state = GetGpuState();
+            if (state == GpuState.Off)
+            {
+                NvmlHelper.Shutdown();
+                return null;
+            }
+            if (state != GpuState.Active) return 0f;
+            return NvmlHelper.GetGpuPower() ?? 0f;
+        }
+
+        public (long usedMb, long totalMb)? GetVramInfo()
+        {
+            if (!IsValid) return null;
+            if (GetGpuState() != GpuState.Active) return null;
+            return NvmlHelper.GetMemoryInfo();
+        }
+
+        public int? GetGpuClock()
+        {
+            if (!IsValid) return null;
+            if (GetGpuState() != GpuState.Active) return null;
+            return NvmlHelper.GetGpuClock();
+        }
+
+        public int? GetGpuMemoryClock()
+        {
+            if (!IsValid) return null;
+            if (GetGpuState() != GpuState.Active) return null;
+            return NvmlHelper.GetGpuMemoryClock();
+        }
+
+        public float? GetGpuVoltage()
+        {
+            if (!IsValid) return null;
+            if (GetGpuState() != GpuState.Active) return null;
+            try
+            {
+                var status = GPUApi.GetCurrentVoltage(_internalGpu!.Handle);
+                if (status.ValueInMicroVolt > 0)
+                {
+                    return (float)(status.ValueInMicroVolt / 1000000.0);
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        public System.Collections.Generic.List<GpuProcessInfo> GetGpuProcesses()
+        {
+            var list = new System.Collections.Generic.List<GpuProcessInfo>();
+            var pids = NvmlHelper.GetRunningProcessIds();
+            foreach (var pid in pids)
+            {
+                try
+                {
+                    using var proc = Process.GetProcessById((int)pid);
+                    list.Add(new GpuProcessInfo { ProcessId = pid, ProcessName = proc.ProcessName });
+                }
+                catch
+                {
+                    list.Add(new GpuProcessInfo { ProcessId = pid, ProcessName = $"PID {pid}" });
+                }
+            }
+            return list;
+        }
+    }
+
+    public class GpuProcessInfo
+    {
+        public uint ProcessId { get; set; }
+        public string ProcessName { get; set; } = "";
+    }
+}

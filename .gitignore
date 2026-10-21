@@ -1,11 +1,19 @@
 .vs/
 **/.vs/
+.idea/
+
 bin/
 obj/
 **/bin/
 **/obj/
+
+dist/
 publish/
 **/publish/
+
+TestResults/
+**/TestResults/
+*.trx
 
 *.user
 *.suo
@@ -16,3 +24,23 @@ debug.log
 *.log
 *.tmp
 *.cache
+
+scratch/
+acpi_staging/*
+!acpi_staging/preysense.mof
+!acpi_staging/SSDT-PREYDEV.aml
+!acpi_staging/SSDT-PREYDEV.dsl
+acer-predator-re/
+
+# Local editor and UI-test state
+.cursor/
+CURSOR.md
+test_tools/captures/
+
+# Machine-specific firmware dumps and external research checkouts
+docs/acpi_tables/
+docs/bios/
+tools/rea/
+tools/rw/
+tools/Configuration.pdf
+tools/OpenCore_PreyBoost_EFI/OpenCore-*-RELEASE.zip

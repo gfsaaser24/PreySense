@@ -1,0 +1,440 @@
+using System;
+using System.Collections.ObjectModel;
+using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using PreySense.Core.Acpi;
+using PreySense.Helpers;
+
+namespace PreySense.Frontend.ViewModels
+{
+    public partial class MainViewModel
+    {
+        private const string GpuModeRegistryPath = @"SOFTWARE\PreySense";
+        private const string GpuModeRegistryValue = "GpuModePreference";
+        private const int DefaultGpuMode = 1;
+
+        // GPU Power Target & ACPI Hardware Controls
+        [ObservableProperty] private int _gpuPowerTargetWatts = 130;
+        [ObservableProperty] private int _gpuPowerTargetMin = GpuPowerLimitConfiguration.MinimumPowerLimitWatts;
+        [ObservableProperty] private int _gpuPowerTargetMax = GpuPowerLimitConfiguration.MaximumPowerLimitWatts;
+        [ObservableProperty] private int _gpuBasePowerWatts = 85;
+        [ObservableProperty] private int _customQuietGpuWatts = 85;
+        [ObservableProperty] private int _customBalancedGpuWatts = 115;
+        [ObservableProperty] private int _customPerfGpuWatts = 125;
+        [ObservableProperty] private int _customTurboGpuWatts = 130;
+        [ObservableProperty] private int _gpuThermalTripPointCelsius = GpuPowerLimitConfiguration.FactoryGpuThermalTripPointCelsius; // 79°C ACPI default (WMG3)
+        [ObservableProperty] private int _customQuietGpuTripPoint = GpuPowerLimitConfiguration.FactoryGpuThermalTripPointCelsius; // 79°C
+        [ObservableProperty] private int _customBalancedGpuTripPoint = GpuPowerLimitConfiguration.FactoryGpuThermalTripPointCelsius; // 79°C
+        [ObservableProperty] private int _customPerfGpuTripPoint = GpuPowerLimitConfiguration.FactoryGpuThermalTripPointCelsius; // 79°C
+        [ObservableProperty] private int _customTurboGpuTripPoint = GpuPowerLimitConfiguration.FactoryGpuThermalTripPointCelsius; // 79°C
+        [ObservableProperty] private string _gpuStateDescription = "NVIDIA GeForce RTX Mobile";
+        [ObservableProperty] private string _activeGpuPowerCeiling = "Max Power Limit: 130W";
+        private bool _gpuHardwareInitialized;
+
+        public void EnsureGpuHardwareInitialized()
+        {
+            if (_gpuHardwareInitialized)
+                return;
+
+            _gpuHardwareInitialized = true;
+            _ = Task.Run(InitializeGpuHardwareBackground);
+        }
+
+        private void InitializeGpuHardwareBackground()
+        {
+            try
+            {
+                byte[]? liveDsdt = OpenCorePowerLimitManager.GetLiveAcpiTable("DSDT");
+                var config = GpuPowerLimitConfiguration.DetectFromHardware(liveDsdt);
+
+                if (_disposed)
+                    return;
+
+                _dispatcher.BeginInvoke(() =>
+                {
+                    if (_disposed)
+                        return;
+
+                    GpuBasePowerWatts = config.BasePowerWatts;
+                    GpuPowerTargetMin = config.MinPowerWatts;
+                    GpuPowerTargetMax = config.MaxPowerWatts;
+                    ActiveGpuPowerCeiling = $"GPU Power Ceiling: {GpuPowerTargetWatts}W (ACPI Max: {GpuPowerTargetMax}W)";
+                });
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"[MainViewModel] Lazy GPU initialization error: {ex.Message}");
+            }
+        }
+
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(IsGpuOptimusActive))]
+        [NotifyPropertyChangedFor(nameof(IsGpuAutoActive))]
+        [NotifyPropertyChangedFor(nameof(IsGpuNvidiaOnlyActive))]
+        [NotifyPropertyChangedFor(nameof(IsGpuEnduranceActive))]
+        [NotifyPropertyChangedFor(nameof(IsGpuStandardActive))]
+        [NotifyPropertyChangedFor(nameof(IsGpuUltimateActive))]
+        private int _activeGpuMuxMode = 1; // 0 = Optimus (iGPU), 1 = Automatic (Auto DDS), 2 = NVIDIA GPU Only (dGPU)
+        [ObservableProperty] private string _gpuMuxModeName = "Automatic";
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(IsGpuEnduranceActive))]
+        [NotifyPropertyChangedFor(nameof(IsGpuStandardActive))]
+        [NotifyPropertyChangedFor(nameof(IsGpuUltimateActive))]
+        [NotifyPropertyChangedFor(nameof(IsGpuOptimusActive))]
+        [NotifyPropertyChangedFor(nameof(IsGpuAutoActive))]
+        [NotifyPropertyChangedFor(nameof(IsGpuNvidiaOnlyActive))]
+        [NotifyPropertyChangedFor(nameof(IsGpuAdvancedOptimusActive))]
+        private bool _isBiosDiscreteGpuActive;
+
+        // GPU selection flags (0=Optimus, 1=Automatic, 2=NVIDIA Only)
+        public bool IsGpuEnduranceActive => !IsBiosDiscreteGpuActive && ActiveGpuMuxMode == 0;
+        public bool IsGpuStandardActive => !IsBiosDiscreteGpuActive && ActiveGpuMuxMode == 1;
+        public bool IsGpuUltimateActive => !IsBiosDiscreteGpuActive && ActiveGpuMuxMode == 2;
+        public bool IsGpuOptimusActive => !IsBiosDiscreteGpuActive && ActiveGpuMuxMode == 0;
+        public bool IsGpuAutoActive => !IsBiosDiscreteGpuActive && ActiveGpuMuxMode == 1;
+        public bool IsGpuNvidiaOnlyActive => !IsBiosDiscreteGpuActive && ActiveGpuMuxMode == 2;
+        public bool IsGpuAdvancedOptimusActive => ActiveGpuMuxMode == 2 && !IsBiosDiscreteGpuActive;
+
+        // dGPU Battery Sentinel
+        public ObservableCollection<PreySense.Gpu.GpuProcessInfo> ActiveGpuProcesses { get; } = new();
+
+        private void NotifyGpuSelectionsChanged()
+        {
+            OnPropertyChanged(nameof(IsGpuEnduranceActive));
+            OnPropertyChanged(nameof(IsGpuStandardActive));
+            OnPropertyChanged(nameof(IsGpuUltimateActive));
+            OnPropertyChanged(nameof(IsGpuOptimusActive));
+            OnPropertyChanged(nameof(IsGpuAutoActive));
+            OnPropertyChanged(nameof(IsGpuNvidiaOnlyActive));
+            OnPropertyChanged(nameof(IsGpuAdvancedOptimusActive));
+        }
+
+        private static string GetGpuModeName(int mode) => mode switch
+        {
+            2 => "NVIDIA GPU Only",
+            1 => "Automatic",
+            _ => "Optimus"
+        };
+
+        private static int LoadGpuModePreference()
+        {
+            try
+            {
+                using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(GpuModeRegistryPath);
+                object? savedValue = key?.GetValue(GpuModeRegistryValue);
+                int mode = savedValue is null
+                    ? DefaultGpuMode
+                    : Math.Clamp(Convert.ToInt32(savedValue), 0, 2);
+
+                if (savedValue is null || savedValue is not int || (int)savedValue != mode)
+                    key?.SetValue(GpuModeRegistryValue, mode, Microsoft.Win32.RegistryValueKind.DWord);
+
+                return mode;
+            }
+            catch
+            {
+                return DefaultGpuMode;
+            }
+        }
+
+        private static void SaveGpuModePreference(int mode)
+        {
+            try
+            {
+                using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(GpuModeRegistryPath);
+                key?.SetValue(GpuModeRegistryValue, Math.Clamp(mode, 0, 2), Microsoft.Win32.RegistryValueKind.DWord);
+            }
+            catch { }
+        }
+
+        [RelayCommand]
+        public async Task ApplyGpuClocksAsync()
+        {
+            IsBusy = true;
+            StatusMessage = "Applying GPU Power Limits via ACPI...";
+            try
+            {
+                // Apply GPU power limit ceiling dynamically via dedicated ACPI-WMI device
+                bool pwrSuccess = await Task.Run(() => PreySense.Core.Hardware.PreySenseWmiDeviceClient.SetGpuPowerLimit((uint)GpuPowerTargetWatts));
+
+                // Apply GPU thermal trip point dynamically via dedicated ACPI-WMI device
+                bool tripSuccess = await Task.Run(() => PreySense.Core.Hardware.PreySenseWmiDeviceClient.SetGpuThermalTripPoint((uint)GpuThermalTripPointCelsius));
+
+                ActiveGpuPowerCeiling = $"Max Power Limit: {GpuPowerTargetWatts}W (ACPI NVPCF, Trip: {GpuThermalTripPointCelsius}°C)";
+                StatusMessage = $"GPU Power Limit Applied: {GpuPowerTargetWatts}W (Trip: {GpuThermalTripPointCelsius}°C via ACPI-WMI)";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"GPU Control error: {ex.Message}";
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        [RelayCommand]
+        public async Task SetGpuMuxModeAsync(object? muxParam)
+        {
+            int muxVal = muxParam switch
+            {
+                int i => i,
+                byte b => (int)b,
+                string s when int.TryParse(s, out int parsed) => parsed,
+                _ => -1
+            };
+            if (muxVal < 0 || muxVal > 2) return;
+
+            await ApplyGpuMuxModeCoreAsync(muxVal, persistPreference: true);
+        }
+
+        private async Task ApplyGpuMuxModeCoreAsync(int muxVal, bool persistPreference)
+        {
+            ActiveGpuMuxMode = muxVal;
+            IsBiosDiscreteGpuActive = false;
+            GpuMuxModeName = GetGpuModeName(muxVal);
+            NotifyGpuSelectionsChanged();
+
+            if (persistPreference)
+                SaveGpuModePreference(muxVal);
+
+            StatusMessage = $"Switching GPU Mode to {GpuMuxModeName}...";
+
+            IsBusy = true;
+            try
+            {
+                if (!_hw.IsDdsAvailable || !_hw.IsDdsSupported())
+                {
+                    StatusMessage = "GPU Mode change failed: NVIDIA Advanced Optimus is not available.";
+                    return;
+                }
+
+                var targetDdsMode = muxVal switch
+                {
+                    2 => Gpu.DdsDisplayMode.NvidiaGpuOnly,
+                    1 => Gpu.DdsDisplayMode.Automatic,
+                    _ => Gpu.DdsDisplayMode.Optimus
+                };
+
+                if (_hw.HasDdsBlockers())
+                {
+                    AppLogger.Log("MainViewModel.SetGpuMuxMode: Active 3D application detected during switch.");
+                }
+
+                // Temporary WPF swapchain release mitigation (dotnet/wpf #9286)
+                var prevRenderMode = System.Windows.Media.RenderOptions.ProcessRenderMode;
+                try
+                {
+                    System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
+                    var (ok, msg) = await Task.Run(() => _hw.SetDdsMode(targetDdsMode));
+                    StatusMessage = ok ? $"GPU Mode set to {GpuMuxModeName} (Advanced Optimus)" : $"GPU switch failed: {msg}";
+                }
+                finally
+                {
+                    System.Windows.Media.RenderOptions.ProcessRenderMode = prevRenderMode;
+                }
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"GPU Mode error: {ex.Message}";
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        private void ApplyGpuBatteryAuto(bool isAcConnected)
+        {
+            if (!IsGpuBatteryAutoEnabled || IsBiosDiscreteGpuActive)
+                return;
+
+            if (!isAcConnected)
+            {
+                if (ActiveGpuMuxMode != 0)
+                {
+                    _gpuModeDeferredForBattery = ActiveGpuMuxMode;
+                    _ = ApplyGpuMuxModeCoreAsync(0, persistPreference: false);
+                    StatusMessage = "iGPU on Battery: switched to Optimus";
+                }
+                return;
+            }
+
+            if (_gpuModeDeferredForBattery is int restoreMode)
+            {
+                _gpuModeDeferredForBattery = null;
+                if (ActiveGpuMuxMode != restoreMode)
+                    _ = ApplyGpuMuxModeCoreAsync(restoreMode, persistPreference: false);
+            }
+        }
+
+        [RelayCommand]
+        public void ToggleGpuBatteryAuto()
+        {
+            IsGpuBatteryAutoEnabled = !IsGpuBatteryAutoEnabled;
+            try
+            {
+                using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"SOFTWARE\PreySense\AdvancedSettings");
+                key?.SetValue("GpuBatteryAuto", IsGpuBatteryAutoEnabled ? 1 : 0);
+            }
+            catch { }
+
+            StatusMessage = IsGpuBatteryAutoEnabled
+                ? "iGPU on Battery: Enabled (Optimus while unplugged)"
+                : "iGPU on Battery: Disabled";
+
+            ApplyGpuBatteryAuto(IsAcConnected);
+        }
+
+        [RelayCommand]
+        public async Task RestartDiscreteGpuAsync()
+        {
+            IsBusy = true;
+            StatusMessage = "Power-cycling and restarting Discrete GPU (reboot-free)...";
+            try
+            {
+                var (ok, msg) = await Task.Run(() => _hw.RestartDiscreteGpu());
+                StatusMessage = msg;
+                var showModal = () =>
+                {
+                    var dialog = new Views.CustomModalDialog
+                    {
+                        Owner = System.Windows.Application.Current?.MainWindow,
+                        Title = "PreySense • Discrete GPU Power Cycle",
+                        HeaderSubtitle = " • Discrete GPU Power Cycle",
+                        Message = msg,
+                        ConfirmText = "OK",
+                        ShowCancelButton = false
+                    };
+                    dialog.ShowDialog();
+                };
+
+                if (System.Windows.Application.Current?.Dispatcher != null && !System.Windows.Application.Current.Dispatcher.CheckAccess())
+                {
+                    System.Windows.Application.Current.Dispatcher.Invoke(showModal);
+                }
+                else
+                {
+                    showModal();
+                }
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"dGPU restart error: {ex.Message}";
+            }
+            finally
+            {
+                IsBusy = false;
+                PollTelemetry();
+            }
+        }
+
+        private static Views.CustomModalDialog CreateDiscreteGpuModal()
+        {
+            return new Views.CustomModalDialog
+            {
+                Owner = System.Windows.Application.Current?.MainWindow,
+                Title = "PreySense • Hardware Discrete GPU",
+                HeaderSubtitle = " • Hardware Display MUX",
+                Message = "Would you like to switch to dGPU Only mode and restart now?",
+                ConfirmText = "Apply & Restart Now"
+            };
+        }
+
+        [RelayCommand]
+        public async Task SetBiosDiscreteGpuAsync()
+        {
+            bool? dialogResult = false;
+            if (System.Windows.Application.Current?.Dispatcher != null && !System.Windows.Application.Current.Dispatcher.CheckAccess())
+            {
+                dialogResult = System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                {
+                    var dialog = CreateDiscreteGpuModal();
+                    return dialog.ShowDialog();
+                });
+            }
+            else
+            {
+                var dialog = CreateDiscreteGpuModal();
+                dialogResult = dialog.ShowDialog();
+            }
+
+            if (dialogResult != true)
+                return;
+
+            IsBusy = true;
+            try
+            {
+                bool ok = await Task.Run(() => _hw.SetGpuMuxMode(PreySense.Helpers.AcerWmi.GpuMux.Discrete));
+                if (ok)
+                {
+                    IsBiosDiscreteGpuActive = true;
+                    NotifyGpuSelectionsChanged();
+                    StatusMessage = "Hardware Discrete GPU set. Restarting system...";
+                    System.Diagnostics.Process.Start("shutdown.exe", "/r /t 2 /c \"PreySense: Applying Hardware Discrete GPU Mode\"");
+                }
+                else
+                {
+                    StatusMessage = "Failed to set Discrete GPU via Acer ACPI.";
+                }
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"ACPI MUX error: {ex.Message}";
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        public void SaveGpuLimitsToRegistry()
+        {
+            try
+            {
+                using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"SOFTWARE\PreySense\GpuLimits");
+                if (key != null)
+                {
+                    key.SetValue("QuietGpuWatts", CustomQuietGpuWatts);
+                    key.SetValue("BalancedGpuWatts", CustomBalancedGpuWatts);
+                    key.SetValue("PerfGpuWatts", CustomPerfGpuWatts);
+                    key.SetValue("TurboGpuWatts", CustomTurboGpuWatts);
+                    key.SetValue("QuietGpuTripPoint", CustomQuietGpuTripPoint);
+                    key.SetValue("BalancedGpuTripPoint", CustomBalancedGpuTripPoint);
+                    key.SetValue("PerfGpuTripPoint", CustomPerfGpuTripPoint);
+                    key.SetValue("TurboGpuTripPoint", CustomTurboGpuTripPoint);
+                    AppLogger.Log("[MainViewModel] Saved GPU power & thermal limits to registry.");
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"[MainViewModel] SaveGpuLimitsToRegistry error: {ex.Message}");
+            }
+        }
+
+        [RelayCommand]
+        public async Task RefreshGpuProcessesAsync()
+        {
+            ActiveGpuProcesses.Clear();
+            var procs = await Task.Run(() => _hw.GetActiveGpuProcesses());
+            foreach (var p in procs)
+            {
+                ActiveGpuProcesses.Add(p);
+            }
+            StatusMessage = ActiveGpuProcesses.Count > 0 
+                ? $"{ActiveGpuProcesses.Count} process(es) holding discrete GPU active"
+                : "No background processes keeping discrete GPU awake (0W D3Cold ready)";
+        }
+
+        [RelayCommand]
+        public async Task KillGpuProcessAsync(object? param)
+        {
+            if (param is uint pid)
+            {
+                await Task.Run(() => _hw.KillProcess(pid));
+                await RefreshGpuProcessesAsync();
+            }
+        }
+    }
+}
