@@ -100,6 +100,30 @@ if ($btn.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern
     return
 }
 
+# Fans is an in-place dashboard state, not an owned secondary window.
+if ($Window -in @('Fans', 'FanCurve')) {
+    Start-Sleep -Milliseconds 500
+    $screenPath = $null
+    if ($Capture) {
+        $cap = & "$PSScriptRoot\Capture-Window.ps1" -Hwnd $mainWin.HWnd
+        if ($cap -and $cap.Count -gt 0) {
+            $screenPath = $cap[0].FilePath
+        }
+    }
+    return [PSCustomObject]@{
+        HWnd           = $mainWin.HWnd
+        ProcessId      = $mainWin.ProcessId
+        Title          = $mainWin.Title
+        ClassName      = $mainWin.ClassName
+        Left           = $mainWin.Left
+        Top            = $mainWin.Top
+        Width          = $mainWin.Width
+        Height         = $mainWin.Height
+        IsVisible      = $mainWin.IsVisible
+        ScreenshotPath = $screenPath
+    }
+}
+
 # Wait for subwindow to appear
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 $subWin = $null

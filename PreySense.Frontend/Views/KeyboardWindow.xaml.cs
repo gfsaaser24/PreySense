@@ -94,6 +94,20 @@ namespace PreySense.Frontend.Views
             }
 
             _pendingLightingEffectTag = tag;
+
+            if (!dynamic && ComboPresetStatic != null)
+            {
+                for (int i = 0; i < ComboPresetStatic.Items.Count; i++)
+                {
+                    if (ComboPresetStatic.Items[i] is ComboBoxItem presetItem &&
+                        presetItem.Tag is string presetTag &&
+                        string.Equals(presetTag, vm.SelectedZonePreset, StringComparison.Ordinal))
+                    {
+                        ComboPresetStatic.SelectedIndex = i;
+                        break;
+                    }
+                }
+            }
         }
 
         private void CoverColorWheel_ColorChanged(object? sender, System.Windows.Media.Color color)

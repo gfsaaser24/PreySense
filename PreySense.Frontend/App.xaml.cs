@@ -18,6 +18,8 @@ namespace PreySense.Frontend
         {
             base.OnStartup(e);
 
+            Services.LocalizationService.Initialize();
+
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
             Deactivated += (_, _) =>

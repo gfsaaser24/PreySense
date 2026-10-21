@@ -19,7 +19,7 @@ $repoRoot = (Resolve-Path "$PSScriptRoot\..").Path
 $binDir = "$repoRoot\PreySense.Frontend\bin\Debug\net10.0-windows"
 
 function Show-PreySenseStatus {
-    $procs = Get-Process -Name PreySense.Frontend -ErrorAction SilentlyContinue
+    $procs = Get-Process -Name PreySense -ErrorAction SilentlyContinue
     if (-not $procs) {
         Write-Host "[!] PreySense.Frontend is NOT running." -ForegroundColor Yellow
         Write-Host "    Start it with: .\test_tools\Restart-PreySense.ps1" -ForegroundColor Gray

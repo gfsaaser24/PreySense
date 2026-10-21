@@ -53,6 +53,14 @@
                                                       IsChecked="{Binding IsRunOnStartupEnabled, Mode=TwoWay}" 
                                                       Command="{Binding ToggleRunOnStartupCommand}"/>
 
+                            <controls:SettingDropdownRow x:Name="LanguageSelector"
+                                                         Title="Language"
+                                                         DropdownWidth="190"
+                                                         SelectionChanged="LanguageSelector_SelectionChanged">
+                                <ComboBoxItem Content="English" Tag="en-US"/>
+                                <ComboBoxItem Content="Simplified Chinese" Tag="zh-CN"/>
+                            </controls:SettingDropdownRow>
+
                             <controls:SettingSwitchRow Title="Theme"
                                                       IsChecked="{Binding IsLightTheme, Mode=TwoWay}"
                                                       OnText="Light"

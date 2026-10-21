@@ -27,7 +27,7 @@ param(
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\Init-Tools.ps1"
 
-$proc = Get-Process -Name PreySense.Frontend -ErrorAction SilentlyContinue | Select-Object -First 1
+$proc = Get-Process -Name PreySense -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $proc) {
     Write-Warning "PreySense.Frontend is not running. Launch it with: .\test_tools\Restart-PreySense.ps1"
     return

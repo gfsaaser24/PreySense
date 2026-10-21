@@ -5,20 +5,31 @@ PreySense is a Windows utility for Acer Predator laptops. It replaces the offici
 Developed and verified on the **Acer Predator Helios Neo 16S (`PHN16S-71-98RF`)**. Other Predator models may work; that is not guaranteed.
 
 <p align="center">
-  <img src="pics/PreySense.png" alt="PreySense Dashboard" width="700">
+  <img src="pics/Dashboard-v2.png" alt="PreySense v2 dashboard" width="440">
   <br>
-  <em>PreySense Main Dashboard &amp; Hardware Controls</em>
+  <em>Main dashboard — performance, GPU, display, fan, and quick-access controls</em>
 </p>
 
+## Screenshots
+
+| Keyboard and logo lighting | Per-mode power limits |
+| :---: | :---: |
+| <img src="pics/Lighting.png" alt="Keyboard and logo lighting controls" width="420"> | <img src="pics/Power-Limits.png" alt="CPU and GPU power-limit controls" width="420"> |
+
+| Platform and OpenCore settings | Metrics overlay configuration |
+| :---: | :---: |
+| <img src="pics/Platform-Settings.png" alt="Platform and OpenCore settings" width="420"> | <img src="pics/Metrics.png" alt="Metrics overlay configuration" width="420"> |
+
 <p align="center">
-  <img src="pics/Overlay.png" alt="PreySense Hardware OSD Overlay" width="550">
+  <img src="pics/Overlay.png" alt="PreySense hardware telemetry overlay" width="550">
   <br>
-  <em>PreySense Real-Time Hardware OSD &amp; Telemetry Overlay</em>
+  <em>Real-time hardware telemetry overlay</em>
 </p>
 
 ## Contents
 
 - [Features](#features)
+- [Screenshots](#screenshots)
 - [Requirements](#requirements)
 - [Install and run](#install-and-run)
 - [OpenCore](#opencore)

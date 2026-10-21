@@ -239,7 +239,7 @@ namespace PreySense.TestTools
         public static List<WindowInfo> FindPreySenseWindows(string titleFilter)
         {
             var results = new List<WindowInfo>();
-            var procs = Process.GetProcessesByName("PreySense.Frontend");
+            var procs = Process.GetProcessesByName("PreySense");
             for (int i = 0; i < procs.Length; i++)
             {
                 results.AddRange(FindWindows((uint)procs[i].Id, titleFilter));

@@ -177,9 +177,9 @@ namespace PreySense.Frontend.ViewModels
             {
                 if (!IsOpenCoreLoaded)
                 {
-                    return "OpenCore is not loaded. Boot via OpenCore to unlock ACPI control.";
+                    return Services.LocalizationService.Translate("OpenCore is not loaded. Boot via OpenCore to unlock ACPI control.");
                 }
-                return "ACPI Hardware Override is disabled.";
+                return Services.LocalizationService.Translate("ACPI Hardware Override is disabled.");
             }
         }
 
@@ -266,7 +266,13 @@ namespace PreySense.Frontend.ViewModels
         public void RefreshOpenCoreStatus()
         {
             IsOpenCoreLoaded = OpenCoreSecurityValidator.DetectIsOpenCoreLoaded();
-            AcpiOverrideStatus = OpenCoreSecurityValidator.GetAcpiOverrideLabel(IsOpenCoreLoaded);
+            AcpiOverrideStatus = Services.LocalizationService.Translate(OpenCoreSecurityValidator.GetAcpiOverrideLabel(IsOpenCoreLoaded));
+        }
+
+        public void RefreshLocalizedText()
+        {
+            AcpiOverrideStatus = Services.LocalizationService.Translate(OpenCoreSecurityValidator.GetAcpiOverrideLabel(IsOpenCoreLoaded));
+            OnPropertyChanged(nameof(AcpiOverrideDisabledBannerText));
         }
 
         [RelayCommand]

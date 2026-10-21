@@ -24,14 +24,14 @@ Write-Host "=== PreySense Hot-Restart Tool ===" -ForegroundColor Cyan
 
 # 1. Stop every running frontend before compiling. This prevents the executable
 # from being locked and guarantees that the test launches the newly built code.
-$runningProcesses = @(Get-Process -Name PreySense.Frontend -ErrorAction SilentlyContinue)
+$runningProcesses = @(Get-Process -Name PreySense -ErrorAction SilentlyContinue)
 if ($runningProcesses.Count -gt 0) {
     Write-Host "[*] Closing $($runningProcesses.Count) running PreySense.Frontend instance(s)..." -ForegroundColor Gray
     $runningProcesses | Stop-Process -Force -ErrorAction Stop
 
     $deadline = [DateTime]::UtcNow.AddSeconds(5)
     do {
-        $remainingProcesses = @(Get-Process -Name PreySense.Frontend -ErrorAction SilentlyContinue)
+        $remainingProcesses = @(Get-Process -Name PreySense -ErrorAction SilentlyContinue)
         if ($remainingProcesses.Count -eq 0) {
             break
         }
@@ -67,7 +67,7 @@ if (-not $NoBuild) {
 }
 
 # 4. Check executable
-$exePath = "$binDir\PreySense.Frontend.exe"
+$exePath = "$binDir\PreySense.exe"
 if (-not (Test-Path $exePath)) {
     Write-Error "Executable not found at: $exePath"
     return

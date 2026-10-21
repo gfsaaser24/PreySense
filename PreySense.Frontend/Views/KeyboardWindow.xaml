@@ -189,8 +189,23 @@
                     <!-- Zone Selection & Palette (Static Mode Only) -->
                     <Border x:Name="PanelStaticControls" Style="{StaticResource OriginalSectionPanelStyle}" Margin="0,0,0,8">
                         <StackPanel>
-                            <!-- Preset Themes - Positioned Above Sync All Zones with 'None' as default -->
-                            <Grid Margin="0,2,0,8">
+                            <!-- Synchronize All Zones Switch -->
+                            <controls:SettingSwitchRow Title="Sync All Zones"
+                                                      IsChecked="{Binding IsRgbSyncZonesEnabled, Mode=TwoWay}"
+                                                      Margin="0,0,0,6"/>
+
+                            <!-- Presets only apply to independent zones. -->
+                            <Grid Margin="0,2,0,16">
+                                <Grid.Style>
+                                    <Style TargetType="Grid">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsRgbSyncZonesEnabled}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Grid.Style>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
@@ -221,11 +236,6 @@
                                     <ComboBoxItem Content="Dracula" Tag="Dracula"/>
                                 </ComboBox>
                             </Grid>
-
-                            <!-- Synchronize All Zones Switch -->
-                            <controls:SettingSwitchRow Title="Sync All Zones"
-                                                      IsChecked="{Binding IsRgbSyncZonesEnabled, Mode=TwoWay}"
-                                                      Margin="0,0,0,6"/>
 
                             <!-- Zone Selector - Visible only when Sync All Zones is disabled -->
                             <StackPanel x:Name="PanelIndividualZones">
