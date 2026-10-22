@@ -63,7 +63,7 @@
             <!-- ============================================== -->
             <!-- 2. TUNING CONTROLS CONTAINER (Locked when ACPI Override OFF or OpenCore not loaded) -->
             <!-- ============================================== -->
-            <Grid Grid.Row="2" IsEnabled="{Binding IsAcpiTuningAllowed}">
+            <Grid Grid.Row="2" IsEnabled="{Binding IsAcpiOverrideEnabled}">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/> <!-- Performance Profile Selector -->
                     <RowDefinition Height="Auto"/> <!-- Scrollable Content Area -->
@@ -82,6 +82,7 @@
                                 <TextBlock Text="Profile Mode" FontSize="{DynamicResource FontSizeBody}" FontWeight="SemiBold"/>
                             </StackPanel>
                             <ComboBox Grid.Column="1" x:Name="ComboModeSelect" Height="28" VerticalAlignment="Center" FontSize="{DynamicResource FontSizeBody}" SelectionChanged="ComboModeSelect_SelectionChanged">
+                                <ComboBoxItem Content="Eco"/>
                                 <ComboBoxItem Content="Quiet"/>
                                 <ComboBoxItem Content="Balanced"/>
                                 <ComboBoxItem Content="Performance"/>
@@ -126,7 +127,7 @@
                                             <TextBlock Text="Burst Window [Tau]" FontSize="{DynamicResource FontSizeBody}" FontWeight="SemiBold"/>
                                             <TextBlock x:Name="LabelTau" Text="56 s" HorizontalAlignment="Right" FontSize="{DynamicResource FontSizeBody}" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
                                         </Grid>
-                                        <Slider x:Name="SliderTau" Minimum="0" Maximum="449" Value="{Binding TauSeconds, Mode=TwoWay}" SmallChange="1" IsSnapToTickEnabled="False" Margin="0,4,0,0" ValueChanged="SliderTau_ValueChanged"/>
+                                        <Slider x:Name="SliderTau" Minimum="0" Maximum="449" SmallChange="1" IsSnapToTickEnabled="False" Margin="0,4,0,0" ValueChanged="SliderTau_ValueChanged"/>
                                     </StackPanel>
                                 </Grid>
                             </StackPanel>

@@ -136,31 +136,24 @@
                                 <TextBlock Grid.Column="1" Text="{Binding AcpiOverrideStatus}" HorizontalAlignment="Right" Margin="8,0,0,0" FontSize="{DynamicResource FontSizeSectionTitle}" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" TextAlignment="Right"/>
                             </Grid>
 
-                            <controls:SettingSwitchRow Title="Enable ACPI Override"
-                                                      IsChecked="{Binding IsAcpiOverrideEnabled, Mode=TwoWay}"/>
-
-                            <controls:SettingValueRow Title="PL1 Platform Power Limit"
-                                                      Value="{Binding PcccCeilingWatts, Mode=TwoWay}"
-                                                      Unit="W"
-                                                      ValueAutomationId="IntelPlatformPowerLimitValue"/>
-
                             <controls:SettingActionRow Title="Install to USB Drive"
                                                        ActionText="Install"
                                                        Command="{Binding InstallOpenCoreToUsbCommand}"/>
 
-                            <Grid Margin="{StaticResource StandardRowMargin}">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="Install to Boot Drive" Style="{DynamicResource SettingLabelStyle}" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Button Content="Install" Style="{StaticResource OriginalRButtonActionStyle}" Height="28" Padding="10,0" Margin="0,0,4,0"
-                                            Command="{Binding InstallOpenCoreToEspCommand}"/>
-                                    <Button Content="Uninstall" Style="{StaticResource OriginalRButtonActionStyle}" Height="28" Padding="10,0"
-                                            Command="{Binding UninstallOpenCoreFromEspCommand}"/>
-                                </StackPanel>
-                            </Grid>
+                            <controls:SettingActionRow Title="Install to Boot Drive"
+                                                       ActionText="{Binding BootDriveActionText}"
+                                                       Command="{Binding ToggleOpenCoreBootDriveCommand}"/>
+
+                            <Separator Margin="0,12"/>
+
+                            <controls:SettingActionRow Title="Factory Profile Calibration"
+                                                       ActionText="Calibrate"
+                                                       Command="{Binding CalibrateFactoryProfilesCommand}"
+                                                       IsEnabled="{Binding IsOpenCoreLoaded}"/>
+
+                            <controls:SettingSwitchRow Title="Enable ACPI Override"
+                                                      IsChecked="{Binding IsAcpiOverrideEnabled, Mode=TwoWay}"
+                                                      IsEnabled="{Binding CanEnableAcpiOverride}"/>
                         </StackPanel>
                     </Border>
                 </StackPanel>

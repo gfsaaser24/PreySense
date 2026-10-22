@@ -17,41 +17,240 @@ namespace PreySense.Frontend.ViewModels
     {
         private FactoryPowerProfileSnapshot? _factoryPowerProfile;
         private bool _hasPersistedPowerLimits;
-        private int _factoryCaptureStarted;
+        private const string FactoryProfilesRegistryPath = @"SOFTWARE\PreySense\FactoryProfiles";
+        [ObservableProperty] private string _factoryCalibrationStatus = "Not calibrated";
+        [ObservableProperty] private bool _isFactoryCalibrationRunning;
+        [ObservableProperty] private bool _isPlatformLimitCalibrated;
+        [ObservableProperty] private bool _isFactoryCalibrationComplete;
+        public bool CanEnableAcpiOverride => IsOpenCoreLoaded && IsFactoryCalibrationComplete;
 
-        public async Task CaptureFactoryPowerProfileAsync()
+        [RelayCommand(AllowConcurrentExecutions = false)]
+        public async Task CalibrateFactoryProfilesAsync()
         {
-            if (System.Threading.Interlocked.Exchange(ref _factoryCaptureStarted, 1) != 0)
+            if (IsFactoryCalibrationRunning)
                 return;
+            if (!IsOpenCoreLoaded)
+            {
+                FactoryCalibrationStatus = "OpenCore must be loaded before calibration.";
+                return;
+            }
 
+            byte originalMode = _hw.CurrentPowerMode;
+            var cpu = CopyCpuConfiguration(_factoryPowerProfile?.Cpu ?? new CpuPowerLimitConfiguration());
+            var gpu = CopyGpuConfiguration(_factoryPowerProfile?.Gpu ?? new GpuPowerLimitConfiguration());
+            int calibratedMask = LoadFactoryCalibrationMask();
+            int readThisRun = 0;
+            var completed = new List<string>();
+            var unavailable = new List<string>();
+            bool anyCpu = false, anyGpu = false, anyTrip = false, anyTau = false;
+            (byte Mode, string Name, int Bit)[] modes =
+            {
+                (0x06, "Eco", 1), (0x00, "Quiet", 2), (0x01, "Balanced", 4),
+                (0x04, "Performance", 8), (0x05, "Turbo", 16)
+            };
+
+            IsFactoryCalibrationRunning = true;
+            FactoryCalibrationStatus = "Reading Eco...";
+            App.SuppressAutoHide = true;
+            var dialog = new Views.CustomModalDialog
+            {
+                Owner = Application.Current.Windows.OfType<Views.AdvancedSettingsWindow>().FirstOrDefault(window => window.IsVisible)
+                    ?? Application.Current.MainWindow,
+                Title = "PreySense • Factory Power Limits",
+                HeaderSubtitle = " • Factory Power Limits",
+                Message = "Reading Eco...",
+                ConfirmText = "OK",
+                ConfirmEnabled = false,
+                ShowCancelButton = false
+            };
+            dialog.Show();
             try
             {
-                FactoryPowerProfileSnapshot snapshot = await Task.Run(() =>
+                foreach (var entry in modes)
                 {
-                    byte activeMode = _hw.CurrentPowerMode;
-                    return FactoryPowerProfileDetector.Capture(activeMode, null);
-                });
+                    string reading = $"Reading {entry.Name}...";
+                    FactoryCalibrationStatus = reading;
+                    if (dialog.IsVisible)
+                        dialog.Message = reading;
+                    bool changed = await Task.Run(() => _hw.SetPowerMode(entry.Mode));
+                    if (!changed)
+                    {
+                        unavailable.Add(entry.Name);
+                        continue;
+                    }
 
-                if (_disposed)
-                    return;
+                    bool confirmed = false;
+                    for (int attempt = 0; attempt < 5; attempt++)
+                    {
+                        await Task.Delay(150);
+                        confirmed = await Task.Run(() => _hw.CurrentPowerMode == entry.Mode);
+                        if (confirmed) break;
+                    }
+                    if (!confirmed)
+                    {
+                        unavailable.Add(entry.Name);
+                        continue;
+                    }
 
-                _factoryPowerProfile = snapshot;
-                if (!_hasPersistedPowerLimits)
-                {
-                    ApplyCapturedFactoryDefaults();
-                    ApplyActiveFactoryMode(snapshot.ActiveMode);
+                    // Acer reports the selected mode before the EC has necessarily
+                    // finished copying that profile into the live power registers.
+                    await Task.Delay(2500);
+                    FactoryPowerProfileSnapshot sample = await Task.Run(() => FactoryPowerProfileDetector.Capture(entry.Mode, null));
+                    if (!sample.CpuReadFromFirmware && !sample.GpuPowerReadFromFirmware && !sample.GpuTripReadFromFirmware && !sample.TauReadFromFirmware)
+                    {
+                        unavailable.Add(entry.Name);
+                        continue;
+                    }
+
+                    MergeFactoryMode(cpu, gpu, sample, entry.Mode);
+                    anyCpu |= sample.CpuReadFromFirmware;
+                    anyGpu |= sample.GpuPowerReadFromFirmware;
+                    anyTrip |= sample.GpuTripReadFromFirmware;
+                    anyTau |= sample.TauReadFromFirmware;
+                    calibratedMask |= entry.Bit;
+                    readThisRun |= entry.Bit;
+                    completed.Add(entry.Name);
                 }
 
-                byte activeMode = snapshot.ActiveMode;
-                AppLogger.Log($"[MainViewModel] Launch factory snapshot for mode 0x{activeMode:X2}: " +
-                    $"CPU={(snapshot.CpuReadFromFirmware ? "firmware" : "fallback")}, " +
-                    $"GPU={(snapshot.GpuPowerReadFromFirmware ? "firmware" : "fallback")}, " +
-                    $"Trip={(snapshot.GpuTripReadFromFirmware ? "firmware" : "fallback")}, " +
-                    $"Tau={(snapshot.TauReadFromFirmware ? "firmware" : "fallback")}.");
+                IsPlatformLimitCalibrated = (calibratedMask & 0x10) != 0;
+                ClampCpuPl1ToPlatformLimit();
+
+                _factoryPowerProfile = new FactoryPowerProfileSnapshot(cpu, gpu, originalMode, anyCpu, anyGpu, anyTrip, anyTau);
+                IsFactoryCalibrationComplete = IsPlatformLimitCalibrated && calibratedMask == 0x1F;
+                SaveFactoryCalibrationToRegistry(calibratedMask);
+                string missing = unavailable.Count == 0 ? string.Empty : $" Unavailable: {string.Join(", ", unavailable)}; run again on the other power source.";
+                string tau = anyTau ? string.Empty : " Tau is missing from the loaded PREYDEV schema; reinstall the current OpenCore package and reboot.";
+                FactoryCalibrationStatus = completed.Count == 0
+                    ? "No firmware profiles could be read."
+                    : $"Saved: {string.Join(", ", completed)}.{missing}{tau}";
+                StatusMessage = FactoryCalibrationStatus;
+                if (dialog.IsVisible && _factoryPowerProfile != null)
+                {
+                    dialog.Message = BuildFactoryLimitsMessage(_factoryPowerProfile, readThisRun, FactoryCalibrationStatus);
+                    dialog.ConfirmEnabled = true;
+                }
             }
             catch (Exception ex)
             {
-                AppLogger.Log($"[MainViewModel] Factory power snapshot failed: {ex.Message}");
+                FactoryCalibrationStatus = $"Calibration failed: {ex.Message}";
+                AppLogger.Log($"[MainViewModel] Factory calibration failed: {ex}");
+                if (dialog.IsVisible)
+                {
+                    dialog.Message = FactoryCalibrationStatus;
+                    dialog.ConfirmEnabled = true;
+                }
+            }
+            finally
+            {
+                await Task.Run(() => _hw.SetPowerMode(originalMode));
+                ActivePowerMode = originalMode;
+                UpdateModeName(originalMode);
+                NotifyModeSelectionsChanged();
+                IsFactoryCalibrationRunning = false;
+                if (!dialog.IsVisible)
+                    App.SuppressAutoHide = false;
+                else
+                    dialog.Closed += (_, _) => App.SuppressAutoHide = false;
+            }
+        }
+
+        private string BuildFactoryLimitsMessage(FactoryPowerProfileSnapshot snapshot, int calibratedMask, string calibrationStatus)
+        {
+            var cpu = snapshot.Cpu;
+            var gpu = snapshot.Gpu;
+            var lines = new List<string>();
+
+            AddFactoryLimitLine(lines, calibratedMask, 1, "Eco", cpu.EcoPl1, cpu.EcoPl2, cpu.EcoTauSeconds, gpu.EcoGpuWatts, gpu.EcoGpuTripPointCelsius, snapshot.TauReadFromFirmware);
+            AddFactoryLimitLine(lines, calibratedMask, 2, "Quiet", cpu.QuietPl1, cpu.QuietPl2, cpu.QuietTauSeconds, gpu.QuietGpuWatts, gpu.QuietGpuTripPointCelsius, snapshot.TauReadFromFirmware);
+            AddFactoryLimitLine(lines, calibratedMask, 4, "Balanced", cpu.BalancedPl1, cpu.BalancedPl2, cpu.BalancedTauSeconds, gpu.BalancedGpuWatts, gpu.BalancedGpuTripPointCelsius, snapshot.TauReadFromFirmware);
+            AddFactoryLimitLine(lines, calibratedMask, 8, "Performance", cpu.PerformancePl1, cpu.PerformancePl2, cpu.PerformanceTauSeconds, gpu.PerformanceGpuWatts, gpu.PerformanceGpuTripPointCelsius, snapshot.TauReadFromFirmware);
+            AddFactoryLimitLine(lines, calibratedMask, 16, "Turbo", cpu.TurboPl1, cpu.TurboPl2, cpu.TurboTauSeconds, gpu.TurboGpuWatts, gpu.TurboGpuTripPointCelsius, snapshot.TauReadFromFirmware);
+
+            if (!snapshot.TauReadFromFirmware)
+            {
+                lines.Add(string.Empty);
+                lines.Add("Tau: unavailable (loaded PREYDEV schema is outdated)");
+            }
+
+            if (lines.Count > 0)
+                lines.Add(string.Empty);
+            lines.Add(calibrationStatus);
+            return string.Join(Environment.NewLine, lines);
+        }
+
+        private static void AddFactoryLimitLine(List<string> lines, int calibratedMask, int modeBit, string modeName,
+            int pl1, int pl2, int tauSeconds, int gpuWatts, int gpuTripCelsius, bool tauRead)
+        {
+            if ((calibratedMask & modeBit) == 0)
+                return;
+            string tau = tauRead ? CpuPowerLimitConfiguration.FormatTauSelection(tauSeconds) : "n/a";
+            lines.Add($"{modeName}: CPU {pl1}/{pl2}W  •  Tau {tau}  •  GPU {gpuWatts}W  •  Trip Point {gpuTripCelsius}°C");
+        }
+
+        private static CpuPowerLimitConfiguration CopyCpuConfiguration(CpuPowerLimitConfiguration source) => new()
+        {
+            QuietPl1 = source.QuietPl1, QuietPl2 = source.QuietPl2,
+            EcoPl1 = source.EcoPl1, EcoPl2 = source.EcoPl2,
+            BalancedPl1 = source.BalancedPl1, BalancedPl2 = source.BalancedPl2,
+            PerformancePl1 = source.PerformancePl1, PerformancePl2 = source.PerformancePl2,
+            TurboPl1 = source.TurboPl1, TurboPl2 = source.TurboPl2,
+            QuietTauSeconds = source.QuietTauSeconds, EcoTauSeconds = source.EcoTauSeconds,
+            BalancedTauSeconds = source.BalancedTauSeconds, PerformanceTauSeconds = source.PerformanceTauSeconds,
+            TurboTauSeconds = source.TurboTauSeconds, TauSeconds = source.TauSeconds
+        };
+
+        private static GpuPowerLimitConfiguration CopyGpuConfiguration(GpuPowerLimitConfiguration source) => new()
+        {
+            BasePowerWatts = source.BasePowerWatts, MinPowerWatts = source.MinPowerWatts, MaxPowerWatts = source.MaxPowerWatts,
+            AcpiTurboDefaultWatts = source.AcpiTurboDefaultWatts,
+            QuietGpuWatts = source.QuietGpuWatts, EcoGpuWatts = source.EcoGpuWatts,
+            BalancedGpuWatts = source.BalancedGpuWatts, PerformanceGpuWatts = source.PerformanceGpuWatts, TurboGpuWatts = source.TurboGpuWatts,
+            QuietGpuTripPointCelsius = source.QuietGpuTripPointCelsius, EcoGpuTripPointCelsius = source.EcoGpuTripPointCelsius,
+            BalancedGpuTripPointCelsius = source.BalancedGpuTripPointCelsius, PerformanceGpuTripPointCelsius = source.PerformanceGpuTripPointCelsius,
+            TurboGpuTripPointCelsius = source.TurboGpuTripPointCelsius
+        };
+
+        private static void MergeFactoryMode(CpuPowerLimitConfiguration cpu, GpuPowerLimitConfiguration gpu, FactoryPowerProfileSnapshot sample, byte mode)
+        {
+            if (sample.TauReadFromFirmware)
+            {
+                cpu.TauSeconds = sample.Cpu.TauSeconds;
+                switch (mode)
+                {
+                    case 0x06: cpu.EcoTauSeconds = sample.Cpu.EcoTauSeconds; break;
+                    case 0x00: cpu.QuietTauSeconds = sample.Cpu.QuietTauSeconds; break;
+                    case 0x01: cpu.BalancedTauSeconds = sample.Cpu.BalancedTauSeconds; break;
+                    case 0x04: cpu.PerformanceTauSeconds = sample.Cpu.PerformanceTauSeconds; break;
+                    case 0x05: cpu.TurboTauSeconds = sample.Cpu.TurboTauSeconds; break;
+                }
+            }
+            switch (mode)
+            {
+                case 0x06:
+                    if (sample.CpuReadFromFirmware) { cpu.EcoPl1 = sample.Cpu.EcoPl1; cpu.EcoPl2 = sample.Cpu.EcoPl2; }
+                    if (sample.GpuPowerReadFromFirmware) gpu.EcoGpuWatts = sample.Gpu.EcoGpuWatts;
+                    if (sample.GpuTripReadFromFirmware) gpu.EcoGpuTripPointCelsius = sample.Gpu.EcoGpuTripPointCelsius;
+                    break;
+                case 0x00:
+                    if (sample.CpuReadFromFirmware) { cpu.QuietPl1 = sample.Cpu.QuietPl1; cpu.QuietPl2 = sample.Cpu.QuietPl2; }
+                    if (sample.GpuPowerReadFromFirmware) gpu.QuietGpuWatts = sample.Gpu.QuietGpuWatts;
+                    if (sample.GpuTripReadFromFirmware) gpu.QuietGpuTripPointCelsius = sample.Gpu.QuietGpuTripPointCelsius;
+                    break;
+                case 0x01:
+                    if (sample.CpuReadFromFirmware) { cpu.BalancedPl1 = sample.Cpu.BalancedPl1; cpu.BalancedPl2 = sample.Cpu.BalancedPl2; }
+                    if (sample.GpuPowerReadFromFirmware) gpu.BalancedGpuWatts = sample.Gpu.BalancedGpuWatts;
+                    if (sample.GpuTripReadFromFirmware) gpu.BalancedGpuTripPointCelsius = sample.Gpu.BalancedGpuTripPointCelsius;
+                    break;
+                case 0x04:
+                    if (sample.CpuReadFromFirmware) { cpu.PerformancePl1 = sample.Cpu.PerformancePl1; cpu.PerformancePl2 = sample.Cpu.PerformancePl2; }
+                    if (sample.GpuPowerReadFromFirmware) gpu.PerformanceGpuWatts = sample.Gpu.PerformanceGpuWatts;
+                    if (sample.GpuTripReadFromFirmware) gpu.PerformanceGpuTripPointCelsius = sample.Gpu.PerformanceGpuTripPointCelsius;
+                    break;
+                case 0x05:
+                    if (sample.CpuReadFromFirmware) { cpu.TurboPl1 = sample.Cpu.TurboPl1; cpu.TurboPl2 = sample.Cpu.TurboPl2; }
+                    if (sample.GpuPowerReadFromFirmware) gpu.TurboGpuWatts = sample.Gpu.TurboGpuWatts;
+                    if (sample.GpuTripReadFromFirmware) gpu.TurboGpuTripPointCelsius = sample.Gpu.TurboGpuTripPointCelsius;
+                    break;
             }
         }
 
@@ -77,6 +276,12 @@ namespace PreySense.Frontend.ViewModels
                     GpuPowerTargetWatts = CustomBalancedGpuWatts;
                     GpuThermalTripPointCelsius = CustomBalancedGpuTripPoint;
                     break;
+                case 0x06:
+                    Pl1Watts = CustomEcoPl1;
+                    Pl2Watts = CustomEcoPl2;
+                    GpuPowerTargetWatts = CustomEcoGpuWatts;
+                    GpuThermalTripPointCelsius = CustomEcoGpuTripPoint;
+                    break;
                 default:
                     Pl1Watts = CustomQuietPl1;
                     Pl2Watts = CustomQuietPl2;
@@ -93,22 +298,31 @@ namespace PreySense.Frontend.ViewModels
 
             CustomQuietPl1 = cpu.QuietPl1;
             CustomQuietPl2 = cpu.QuietPl2;
+            CustomEcoPl1 = cpu.EcoPl1;
+            CustomEcoPl2 = cpu.EcoPl2;
             CustomBalancedPl1 = cpu.BalancedPl1;
             CustomBalancedPl2 = cpu.BalancedPl2;
             CustomPerfPl1 = cpu.PerformancePl1;
             CustomPerfPl2 = cpu.PerformancePl2;
             CustomTurboPl1 = cpu.TurboPl1;
             CustomTurboPl2 = cpu.TurboPl2;
-            TauSeconds = cpu.TauSeconds;
+            CustomQuietTau = cpu.QuietTauSeconds;
+            CustomEcoTau = cpu.EcoTauSeconds;
+            CustomBalancedTau = cpu.BalancedTauSeconds;
+            CustomPerfTau = cpu.PerformanceTauSeconds;
+            CustomTurboTau = cpu.TurboTauSeconds;
+            TauSeconds = TauForMode(ActivePowerMode);
 
             GpuBasePowerWatts = gpu.BasePowerWatts;
             GpuPowerTargetMin = gpu.MinPowerWatts;
             GpuPowerTargetMax = gpu.MaxPowerWatts;
             CustomQuietGpuWatts = gpu.QuietGpuWatts;
+            CustomEcoGpuWatts = gpu.EcoGpuWatts;
             CustomBalancedGpuWatts = gpu.BalancedGpuWatts;
             CustomPerfGpuWatts = gpu.PerformanceGpuWatts;
             CustomTurboGpuWatts = gpu.TurboGpuWatts;
             CustomQuietGpuTripPoint = gpu.QuietGpuTripPointCelsius;
+            CustomEcoGpuTripPoint = gpu.EcoGpuTripPointCelsius;
             CustomBalancedGpuTripPoint = gpu.BalancedGpuTripPointCelsius;
             CustomPerfGpuTripPoint = gpu.PerformanceGpuTripPointCelsius;
             CustomTurboGpuTripPoint = gpu.TurboGpuTripPointCelsius;
@@ -118,29 +332,39 @@ namespace PreySense.Frontend.ViewModels
         {
             var cpu = _factoryPowerProfile?.Cpu ?? new CpuPowerLimitConfiguration();
             var gpu = _factoryPowerProfile?.Gpu ?? new GpuPowerLimitConfiguration();
-            TauSeconds = cpu.TauSeconds;
 
             switch (modeIndex)
             {
                 case 0:
+                    CustomEcoTau = cpu.EcoTauSeconds;
+                    CustomEcoPl1 = cpu.EcoPl1;
+                    CustomEcoPl2 = cpu.EcoPl2;
+                    CustomEcoGpuWatts = gpu.EcoGpuWatts;
+                    CustomEcoGpuTripPoint = gpu.EcoGpuTripPointCelsius;
+                    break;
+                case 1:
+                    CustomQuietTau = cpu.QuietTauSeconds;
                     CustomQuietPl1 = cpu.QuietPl1;
                     CustomQuietPl2 = cpu.QuietPl2;
                     CustomQuietGpuWatts = gpu.QuietGpuWatts;
                     CustomQuietGpuTripPoint = gpu.QuietGpuTripPointCelsius;
                     break;
-                case 1:
+                case 2:
+                    CustomBalancedTau = cpu.BalancedTauSeconds;
                     CustomBalancedPl1 = cpu.BalancedPl1;
                     CustomBalancedPl2 = cpu.BalancedPl2;
                     CustomBalancedGpuWatts = gpu.BalancedGpuWatts;
                     CustomBalancedGpuTripPoint = gpu.BalancedGpuTripPointCelsius;
                     break;
-                case 2:
+                case 3:
+                    CustomPerfTau = cpu.PerformanceTauSeconds;
                     CustomPerfPl1 = cpu.PerformancePl1;
                     CustomPerfPl2 = cpu.PerformancePl2;
                     CustomPerfGpuWatts = gpu.PerformanceGpuWatts;
                     CustomPerfGpuTripPoint = gpu.PerformanceGpuTripPointCelsius;
                     break;
-                case 3:
+                case 4:
+                    CustomTurboTau = cpu.TurboTauSeconds;
                     CustomTurboPl1 = cpu.TurboPl1;
                     CustomTurboPl2 = cpu.TurboPl2;
                     CustomTurboGpuWatts = gpu.TurboGpuWatts;
@@ -151,17 +375,55 @@ namespace PreySense.Frontend.ViewModels
         // Power Limits (PL1/PL2/Tau - Informational / Mode Target)
         [ObservableProperty] private int _pl1Watts = 55;
         [ObservableProperty] private int _pl2Watts = 130;
-        [ObservableProperty] private int _pl1Max = OpenCorePowerLimitManager.FactoryIntelPlatformLimitWatts;
+        [ObservableProperty] private int _pl1Max = CpuPowerLimitConfiguration.MaxPowerLimitWatts;
         [ObservableProperty] private int _pl2Max = CpuPowerLimitConfiguration.MaxPowerLimitWatts;
-        [ObservableProperty] private int _tauSeconds = CpuPowerLimitConfiguration.FactoryTauSeconds; // Standard 56s, up to 448s / infinite
-        [ObservableProperty] private int _pcccCeilingWatts = OpenCorePowerLimitManager.FactoryIntelPlatformLimitWatts;
-        [ObservableProperty] private int _intelPlatformPowerLimitMinimumWatts = OpenCorePowerLimitManager.FactoryIntelPlatformLimitWatts;
-        [ObservableProperty] private string _intelPlatformPowerLimitDescription = "Detecting the platform minimum from ACPI firmware...";
+        [ObservableProperty] private int _tauSeconds = CpuPowerLimitConfiguration.FactoryTauSeconds; // Active window written to hardware
+        [ObservableProperty] private int _customQuietTau = CpuPowerLimitConfiguration.FactoryTauSeconds;
+        [ObservableProperty] private int _customEcoTau = CpuPowerLimitConfiguration.FactoryTauSeconds;
+        [ObservableProperty] private int _customBalancedTau = CpuPowerLimitConfiguration.FactoryTauSeconds;
+        [ObservableProperty] private int _customPerfTau = CpuPowerLimitConfiguration.FactoryTauSeconds;
+        [ObservableProperty] private int _customTurboTau = CpuPowerLimitConfiguration.FactoryTauSeconds;
+
+        public int TauForMode(byte mode) => Math.Clamp(mode switch
+        {
+            0x05 => CustomTurboTau,
+            0x04 => CustomPerfTau,
+            0x01 => CustomBalancedTau,
+            0x06 => CustomEcoTau,
+            _ => CustomQuietTau
+        }, 0, CpuPowerLimitConfiguration.InfiniteTauSliderValue);
+
+        public int TauForModeIndex(int modeIndex) => modeIndex switch
+        {
+            0 => CustomEcoTau,
+            1 => CustomQuietTau,
+            2 => CustomBalancedTau,
+            3 => CustomPerfTau,
+            _ => CustomTurboTau
+        };
+
+        public void SetTauForModeIndex(int modeIndex, int tauSeconds)
+        {
+            int tau = Math.Clamp(tauSeconds, 0, CpuPowerLimitConfiguration.InfiniteTauSliderValue);
+            switch (modeIndex)
+            {
+                case 0: CustomEcoTau = tau; break;
+                case 1: CustomQuietTau = tau; break;
+                case 2: CustomBalancedTau = tau; break;
+                case 3: CustomPerfTau = tau; break;
+                default: CustomTurboTau = tau; break;
+            }
+            TauSeconds = tau;
+        }
         [ObservableProperty] private string _postRebootVerificationText = "Awaiting post-reboot hardware verification...";
 
         // ACPI Override Enable Policy
         [ObservableProperty] private bool _isAcpiOverrideEnabled = false;
         [ObservableProperty] private bool _isOpenCoreLoaded = false;
+        [ObservableProperty] private bool _isOpenCorePartitionPresent;
+
+        partial void OnIsOpenCorePartitionPresentChanged(bool value) =>
+            OnPropertyChanged(nameof(BootDriveActionText));
 
         public Visibility OpenCoreNotLoadedWarningVisibility => IsOpenCoreLoaded ? Visibility.Collapsed : Visibility.Visible;
         public Visibility OpenCoreLoadedBannerVisibility => IsOpenCoreLoaded ? Visibility.Visible : Visibility.Collapsed;
@@ -183,11 +445,11 @@ namespace PreySense.Frontend.ViewModels
             }
         }
 
-        public bool IsAcpiTuningAllowed => IsOpenCoreLoaded && IsAcpiOverrideEnabled;
-
         // ACPI Boot-Time Override State
         [ObservableProperty] private int _customQuietPl1 = CpuPowerLimitConfiguration.FactoryQuietPl1;
         [ObservableProperty] private int _customQuietPl2 = CpuPowerLimitConfiguration.FactoryQuietPl2;
+        [ObservableProperty] private int _customEcoPl1 = CpuPowerLimitConfiguration.FactoryEcoPl1;
+        [ObservableProperty] private int _customEcoPl2 = CpuPowerLimitConfiguration.FactoryEcoPl2;
         [ObservableProperty] private int _customBalancedPl1 = CpuPowerLimitConfiguration.FactoryBalancedPl1;
         [ObservableProperty] private int _customBalancedPl2 = CpuPowerLimitConfiguration.FactoryBalancedPl2;
         [ObservableProperty] private int _customPerfPl1 = CpuPowerLimitConfiguration.FactoryPerformancePl1;
@@ -197,31 +459,19 @@ namespace PreySense.Frontend.ViewModels
         [ObservableProperty] private string _acpiOverrideStatus = "OpenCore Not Loaded";
         [ObservableProperty] private string _acpiActionMessage = string.Empty;
 
-        public int EffectivePlatformPl1Limit =>
-            Math.Clamp(PcccCeilingWatts, IntelPlatformPowerLimitMinimumWatts, CpuPowerLimitConfiguration.MaxPowerLimitWatts);
-
-        partial void OnPcccCeilingWattsChanged(int value)
-        {
-            int clamped = Math.Clamp(value, 1, CpuPowerLimitConfiguration.MaxPowerLimitWatts);
-            if (clamped != value)
-            {
-                PcccCeilingWatts = clamped;
-                return;
-            }
-
-            OnPropertyChanged(nameof(EffectivePlatformPl1Limit));
-            ClampCpuPl1ToPlatformLimit();
-        }
+        public int EffectivePlatformPl1Limit => CpuPowerLimitConfiguration.MaxPowerLimitWatts;
 
         public void ClampCpuPl1ToPlatformLimit()
         {
             Pl1Max = EffectivePlatformPl1Limit;
             CustomQuietPl1 = LimitPl1ToPlatform(CustomQuietPl1);
+            CustomEcoPl1 = LimitPl1ToPlatform(CustomEcoPl1);
             CustomBalancedPl1 = LimitPl1ToPlatform(CustomBalancedPl1);
             CustomPerfPl1 = LimitPl1ToPlatform(CustomPerfPl1);
             CustomTurboPl1 = LimitPl1ToPlatform(CustomTurboPl1);
             Pl1Watts = LimitPl1ToPlatform(Pl1Watts);
             CustomQuietPl2 = LimitPl2(CustomQuietPl1, CustomQuietPl2);
+            CustomEcoPl2 = LimitPl2(CustomEcoPl1, CustomEcoPl2);
             CustomBalancedPl2 = LimitPl2(CustomBalancedPl1, CustomBalancedPl2);
             CustomPerfPl2 = LimitPl2(CustomPerfPl1, CustomPerfPl2);
             CustomTurboPl2 = LimitPl2(CustomTurboPl1, CustomTurboPl2);
@@ -242,8 +492,11 @@ namespace PreySense.Frontend.ViewModels
             OnPropertyChanged(nameof(OpenCoreLoadedBannerVisibility));
             OnPropertyChanged(nameof(AcpiOverrideDisabledBannerVisibility));
             OnPropertyChanged(nameof(AcpiOverrideDisabledBannerText));
-            OnPropertyChanged(nameof(IsAcpiTuningAllowed));
+            OnPropertyChanged(nameof(CanEnableAcpiOverride));
+            OnPropertyChanged(nameof(BootDriveActionText));
         }
+
+        public string BootDriveActionText => IsOpenCorePartitionPresent ? "Uninstall" : "Install";
 
         partial void OnIsAcpiOverrideEnabledChanged(bool value)
         {
@@ -256,17 +509,33 @@ namespace PreySense.Frontend.ViewModels
 
             OnPropertyChanged(nameof(AcpiOverrideDisabledBannerVisibility));
             OnPropertyChanged(nameof(AcpiOverrideDisabledBannerText));
-            OnPropertyChanged(nameof(IsAcpiTuningAllowed));
 
             StatusMessage = value 
                 ? "ACPI Firmware Override: Enabled (PL1/PL2/Tau unlocked)" 
                 : "ACPI Firmware Override: Disabled (Controls locked to factory profile)";
         }
 
+        partial void OnIsFactoryCalibrationCompleteChanged(bool value)
+        {
+            OnPropertyChanged(nameof(CanEnableAcpiOverride));
+            if (!value && IsAcpiOverrideEnabled)
+                IsAcpiOverrideEnabled = false;
+        }
+
         public void RefreshOpenCoreStatus()
         {
             IsOpenCoreLoaded = OpenCoreSecurityValidator.DetectIsOpenCoreLoaded();
             AcpiOverrideStatus = Services.LocalizationService.Translate(OpenCoreSecurityValidator.GetAcpiOverrideLabel(IsOpenCoreLoaded));
+            RefreshOpenCorePartition();
+        }
+
+        private void RefreshOpenCorePartition()
+        {
+            _ = Task.Run(() =>
+            {
+                bool present = OpenCoreSecurityValidator.IsPreySensePartitionPresent();
+                _dispatcher.InvokeAsync(() => IsOpenCorePartitionPresent = present);
+            });
         }
 
         public void RefreshLocalizedText()
@@ -303,6 +572,8 @@ namespace PreySense.Frontend.ViewModels
         [RelayCommand]
         public void ToggleAcpiOverride()
         {
+            if (!IsAcpiOverrideEnabled && !CanEnableAcpiOverride)
+                return;
             IsAcpiOverrideEnabled = !IsAcpiOverrideEnabled;
         }
 
@@ -360,7 +631,7 @@ namespace PreySense.Frontend.ViewModels
             File.WriteAllBytes(Path.Combine(acpiDirectory, "SSDT-PREYDEV.dsl"), ReadEmbeddedAcpiPayload("PreySense.ACPI.SSDT-PREYDEV.dsl"));
 
             string configPath = Path.Combine(packageRoot, "EFI", "OC", "config.plist");
-            if (!OpenCorePowerLimitManager.UpdateConfigPlistPatches(configPath, string.Empty, 0, PcccCeilingWatts))
+            if (!OpenCorePowerLimitManager.UpdateConfigPlistPatches(configPath, string.Empty, 0))
             {
                 throw new InvalidOperationException("The staged OpenCore config.plist could not be updated.");
             }
@@ -470,6 +741,14 @@ namespace PreySense.Frontend.ViewModels
         }
 
         [RelayCommand]
+        public async Task ToggleOpenCoreBootDriveAsync()
+        {
+            if (IsOpenCorePartitionPresent)
+                UninstallOpenCoreFromEsp();
+            else
+                await InstallOpenCoreToEspAsync();
+        }
+
         public async Task InstallOpenCoreToEspAsync()
         {
             IsBusy = true;
@@ -499,7 +778,6 @@ namespace PreySense.Frontend.ViewModels
             }
         }
 
-        [RelayCommand]
         public void UninstallOpenCoreFromEsp()
         {
             try
@@ -529,7 +807,6 @@ namespace PreySense.Frontend.ViewModels
         public void ResetAcpiLimits()
         {
             ApplyCapturedFactoryDefaults();
-            PcccCeilingWatts = IntelPlatformPowerLimitMinimumWatts;
             GpuPowerTargetWatts = CustomTurboGpuWatts;
             GpuThermalTripPointCelsius = CustomTurboGpuTripPoint;
 
@@ -551,25 +828,28 @@ namespace PreySense.Frontend.ViewModels
         {
             try
             {
-                IntelPlatformPowerLimitMinimumWatts = OpenCorePowerLimitManager.FactoryIntelPlatformLimitWatts;
-                PcccCeilingWatts = IntelPlatformPowerLimitMinimumWatts;
+                LoadFactoryCalibrationFromRegistry();
 
                 using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"SOFTWARE\PreySense\CpuLimits");
                 if (key != null)
                 {
                     CustomQuietPl1 = Math.Clamp((int)key.GetValue("QuietPl1", CustomQuietPl1), 10, CpuPowerLimitConfiguration.MaxPowerLimitWatts);
                     CustomQuietPl2 = Math.Clamp((int)key.GetValue("QuietPl2", CustomQuietPl2), 10, CpuPowerLimitConfiguration.MaxPowerLimitWatts);
+                    CustomEcoPl1 = Math.Clamp((int)key.GetValue("EcoPl1", CustomEcoPl1), 10, CpuPowerLimitConfiguration.MaxPowerLimitWatts);
+                    CustomEcoPl2 = Math.Clamp((int)key.GetValue("EcoPl2", CustomEcoPl2), 10, CpuPowerLimitConfiguration.MaxPowerLimitWatts);
                     CustomBalancedPl1 = Math.Clamp((int)key.GetValue("BalancedPl1", CustomBalancedPl1), 10, CpuPowerLimitConfiguration.MaxPowerLimitWatts);
                     CustomBalancedPl2 = Math.Clamp((int)key.GetValue("BalancedPl2", CustomBalancedPl2), 10, CpuPowerLimitConfiguration.MaxPowerLimitWatts);
                     CustomPerfPl1 = Math.Clamp((int)key.GetValue("PerfPl1", CustomPerfPl1), 10, CpuPowerLimitConfiguration.MaxPowerLimitWatts);
                     CustomPerfPl2 = Math.Clamp((int)key.GetValue("PerfPl2", CustomPerfPl2), 10, CpuPowerLimitConfiguration.MaxPowerLimitWatts);
                     CustomTurboPl1 = Math.Clamp((int)key.GetValue("TurboPl1", CustomTurboPl1), 10, CpuPowerLimitConfiguration.MaxPowerLimitWatts);
                     CustomTurboPl2 = Math.Clamp((int)key.GetValue("TurboPl2", CustomTurboPl2), 10, CpuPowerLimitConfiguration.MaxPowerLimitWatts);
-                    TauSeconds = Math.Clamp((int)key.GetValue("TauSeconds", TauSeconds), 0, CpuPowerLimitConfiguration.InfiniteTauSliderValue);
-                    PcccCeilingWatts = Math.Clamp(
-                        (int)key.GetValue("PcccCeilingWatts", PcccCeilingWatts),
-                        IntelPlatformPowerLimitMinimumWatts,
-                        CpuPowerLimitConfiguration.MaxPowerLimitWatts);
+                    int sharedTau = Math.Clamp((int)key.GetValue("TauSeconds", TauSeconds), 0, CpuPowerLimitConfiguration.InfiniteTauSliderValue);
+                    CustomQuietTau = Math.Clamp((int)key.GetValue("QuietTau", sharedTau), 0, CpuPowerLimitConfiguration.InfiniteTauSliderValue);
+                    CustomEcoTau = Math.Clamp((int)key.GetValue("EcoTau", sharedTau), 0, CpuPowerLimitConfiguration.InfiniteTauSliderValue);
+                    CustomBalancedTau = Math.Clamp((int)key.GetValue("BalancedTau", sharedTau), 0, CpuPowerLimitConfiguration.InfiniteTauSliderValue);
+                    CustomPerfTau = Math.Clamp((int)key.GetValue("PerfTau", sharedTau), 0, CpuPowerLimitConfiguration.InfiniteTauSliderValue);
+                    CustomTurboTau = Math.Clamp((int)key.GetValue("TurboTau", sharedTau), 0, CpuPowerLimitConfiguration.InfiniteTauSliderValue);
+                    TauSeconds = TauForMode(ActivePowerMode);
                     ClampCpuPl1ToPlatformLimit();
                     AppLogger.Log("[MainViewModel] Loaded CPU power limits from registry.");
                 }
@@ -578,12 +858,14 @@ namespace PreySense.Frontend.ViewModels
                 if (gpuKey != null)
                 {
                     CustomQuietGpuWatts = Math.Max(1, (int)gpuKey.GetValue("QuietGpuWatts", CustomQuietGpuWatts));
+                    CustomEcoGpuWatts = Math.Max(1, (int)gpuKey.GetValue("EcoGpuWatts", CustomEcoGpuWatts));
                     CustomBalancedGpuWatts = Math.Max(1, (int)gpuKey.GetValue("BalancedGpuWatts", CustomBalancedGpuWatts));
                     CustomPerfGpuWatts = Math.Max(1, (int)gpuKey.GetValue("PerfGpuWatts", CustomPerfGpuWatts));
                     CustomTurboGpuWatts = Math.Max(1, (int)gpuKey.GetValue("TurboGpuWatts", CustomTurboGpuWatts));
                     GpuPowerTargetWatts = CustomTurboGpuWatts;
 
                     CustomQuietGpuTripPoint = Math.Clamp((int)gpuKey.GetValue("QuietGpuTripPoint", CustomQuietGpuTripPoint), 70, 87);
+                    CustomEcoGpuTripPoint = Math.Clamp((int)gpuKey.GetValue("EcoGpuTripPoint", CustomEcoGpuTripPoint), 70, 87);
                     CustomBalancedGpuTripPoint = Math.Clamp((int)gpuKey.GetValue("BalancedGpuTripPoint", CustomBalancedGpuTripPoint), 70, 87);
                     CustomPerfGpuTripPoint = Math.Clamp((int)gpuKey.GetValue("PerfGpuTripPoint", CustomPerfGpuTripPoint), 70, 87);
                     CustomTurboGpuTripPoint = Math.Clamp((int)gpuKey.GetValue("TurboGpuTripPoint", CustomTurboGpuTripPoint), 70, 87);
@@ -603,6 +885,108 @@ namespace PreySense.Frontend.ViewModels
             {
                 AppLogger.Log($"[MainViewModel] LoadCpuLimitsFromRegistry error: {ex.Message}");
             }
+        }
+
+        private int LoadFactoryCalibrationMask()
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(FactoryProfilesRegistryPath);
+            return key?.GetValue("CalibratedModes") is int mask ? mask : 0;
+        }
+
+        private void LoadFactoryCalibrationFromRegistry()
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(FactoryProfilesRegistryPath);
+            if (key == null)
+            {
+                IsFactoryCalibrationComplete = false;
+                IsAcpiOverrideEnabled = false;
+                return;
+            }
+
+            var cpu = new CpuPowerLimitConfiguration
+            {
+                EcoPl1 = ReadFactoryInt(key, "EcoPl1", CpuPowerLimitConfiguration.FactoryEcoPl1),
+                EcoPl2 = ReadFactoryInt(key, "EcoPl2", CpuPowerLimitConfiguration.FactoryEcoPl2),
+                QuietPl1 = ReadFactoryInt(key, "QuietPl1", CpuPowerLimitConfiguration.FactoryQuietPl1),
+                QuietPl2 = ReadFactoryInt(key, "QuietPl2", CpuPowerLimitConfiguration.FactoryQuietPl2),
+                BalancedPl1 = ReadFactoryInt(key, "BalancedPl1", CpuPowerLimitConfiguration.FactoryBalancedPl1),
+                BalancedPl2 = ReadFactoryInt(key, "BalancedPl2", CpuPowerLimitConfiguration.FactoryBalancedPl2),
+                PerformancePl1 = ReadFactoryInt(key, "PerformancePl1", CpuPowerLimitConfiguration.FactoryPerformancePl1),
+                PerformancePl2 = ReadFactoryInt(key, "PerformancePl2", CpuPowerLimitConfiguration.FactoryPerformancePl2),
+                TurboPl1 = ReadFactoryInt(key, "TurboPl1", CpuPowerLimitConfiguration.FactoryTurboPl1),
+                TurboPl2 = ReadFactoryInt(key, "TurboPl2", CpuPowerLimitConfiguration.FactoryTurboPl2),
+                TauSeconds = Math.Clamp(ReadFactoryInt(key, "TauSeconds", CpuPowerLimitConfiguration.FactoryTauSeconds), 0, CpuPowerLimitConfiguration.InfiniteTauSliderValue)
+            };
+            int sharedFactoryTau = cpu.TauSeconds;
+            cpu.QuietTauSeconds = Math.Clamp(ReadFactoryInt(key, "QuietTau", sharedFactoryTau), 0, CpuPowerLimitConfiguration.InfiniteTauSliderValue);
+            cpu.EcoTauSeconds = Math.Clamp(ReadFactoryInt(key, "EcoTau", sharedFactoryTau), 0, CpuPowerLimitConfiguration.InfiniteTauSliderValue);
+            cpu.BalancedTauSeconds = Math.Clamp(ReadFactoryInt(key, "BalancedTau", sharedFactoryTau), 0, CpuPowerLimitConfiguration.InfiniteTauSliderValue);
+            cpu.PerformanceTauSeconds = Math.Clamp(ReadFactoryInt(key, "PerformanceTau", sharedFactoryTau), 0, CpuPowerLimitConfiguration.InfiniteTauSliderValue);
+            cpu.TurboTauSeconds = Math.Clamp(ReadFactoryInt(key, "TurboTau", sharedFactoryTau), 0, CpuPowerLimitConfiguration.InfiniteTauSliderValue);
+            var gpu = new GpuPowerLimitConfiguration
+            {
+                EcoGpuWatts = ReadFactoryInt(key, "EcoGpuWatts", 85),
+                QuietGpuWatts = ReadFactoryInt(key, "QuietGpuWatts", 85),
+                BalancedGpuWatts = ReadFactoryInt(key, "BalancedGpuWatts", 100),
+                PerformanceGpuWatts = ReadFactoryInt(key, "PerformanceGpuWatts", 115),
+                TurboGpuWatts = ReadFactoryInt(key, "TurboGpuWatts", 130),
+                EcoGpuTripPointCelsius = ReadFactoryInt(key, "EcoGpuTrip", GpuPowerLimitConfiguration.FactoryGpuThermalTripPointCelsius),
+                QuietGpuTripPointCelsius = ReadFactoryInt(key, "QuietGpuTrip", GpuPowerLimitConfiguration.FactoryGpuThermalTripPointCelsius),
+                BalancedGpuTripPointCelsius = ReadFactoryInt(key, "BalancedGpuTrip", GpuPowerLimitConfiguration.FactoryGpuThermalTripPointCelsius),
+                PerformanceGpuTripPointCelsius = ReadFactoryInt(key, "PerformanceGpuTrip", GpuPowerLimitConfiguration.FactoryGpuThermalTripPointCelsius),
+                TurboGpuTripPointCelsius = ReadFactoryInt(key, "TurboGpuTrip", GpuPowerLimitConfiguration.FactoryGpuThermalTripPointCelsius)
+            };
+            int mask = LoadFactoryCalibrationMask();
+            IsPlatformLimitCalibrated = key.GetValue("PlatformLimitCalibrated") is int platformCalibrated && platformCalibrated != 0;
+            IsFactoryCalibrationComplete = IsPlatformLimitCalibrated && mask == 0x1F;
+            if (!IsFactoryCalibrationComplete)
+                IsAcpiOverrideEnabled = false;
+            _factoryPowerProfile = new FactoryPowerProfileSnapshot(cpu, gpu, 0x01, mask != 0, mask != 0, mask != 0, key.GetValue("TauRead") is int tauRead && tauRead != 0);
+            FactoryCalibrationStatus = $"Saved calibration loaded ({CountCalibratedModes(mask)}/5 modes).";
+        }
+
+        private static int ReadFactoryInt(RegistryKey key, string name, int fallback) =>
+            key.GetValue(name) is int value ? value : fallback;
+
+        private static int CountCalibratedModes(int mask)
+        {
+            int count = 0;
+            for (int bit = 0; bit < 5; bit++)
+                if ((mask & (1 << bit)) != 0) count++;
+            return count;
+        }
+
+        private void SaveFactoryCalibrationToRegistry(int calibratedMask)
+        {
+            if (_factoryPowerProfile == null)
+                return;
+
+            using var key = Registry.CurrentUser.CreateSubKey(FactoryProfilesRegistryPath);
+            if (key == null)
+                return;
+
+            CpuPowerLimitConfiguration cpu = _factoryPowerProfile.Cpu;
+            GpuPowerLimitConfiguration gpu = _factoryPowerProfile.Gpu;
+            key.SetValue("CalibratedModes", calibratedMask);
+            key.SetValue("PlatformLimitCalibrated", IsPlatformLimitCalibrated ? 1 : 0);
+            key.SetValue("TauRead", _factoryPowerProfile.TauReadFromFirmware ? 1 : 0);
+            key.SetValue("TauSeconds", cpu.TauSeconds);
+            key.SetValue("QuietTau", cpu.QuietTauSeconds);
+            key.SetValue("EcoTau", cpu.EcoTauSeconds);
+            key.SetValue("BalancedTau", cpu.BalancedTauSeconds);
+            key.SetValue("PerformanceTau", cpu.PerformanceTauSeconds);
+            key.SetValue("TurboTau", cpu.TurboTauSeconds);
+            key.SetValue("EcoPl1", cpu.EcoPl1); key.SetValue("EcoPl2", cpu.EcoPl2);
+            key.SetValue("QuietPl1", cpu.QuietPl1); key.SetValue("QuietPl2", cpu.QuietPl2);
+            key.SetValue("BalancedPl1", cpu.BalancedPl1); key.SetValue("BalancedPl2", cpu.BalancedPl2);
+            key.SetValue("PerformancePl1", cpu.PerformancePl1); key.SetValue("PerformancePl2", cpu.PerformancePl2);
+            key.SetValue("TurboPl1", cpu.TurboPl1); key.SetValue("TurboPl2", cpu.TurboPl2);
+            key.SetValue("EcoGpuWatts", gpu.EcoGpuWatts); key.SetValue("QuietGpuWatts", gpu.QuietGpuWatts);
+            key.SetValue("BalancedGpuWatts", gpu.BalancedGpuWatts); key.SetValue("PerformanceGpuWatts", gpu.PerformanceGpuWatts);
+            key.SetValue("TurboGpuWatts", gpu.TurboGpuWatts);
+            key.SetValue("EcoGpuTrip", gpu.EcoGpuTripPointCelsius); key.SetValue("QuietGpuTrip", gpu.QuietGpuTripPointCelsius);
+            key.SetValue("BalancedGpuTrip", gpu.BalancedGpuTripPointCelsius); key.SetValue("PerformanceGpuTrip", gpu.PerformanceGpuTripPointCelsius);
+            key.SetValue("TurboGpuTrip", gpu.TurboGpuTripPointCelsius);
         }
 
         public void InitializeDefaultsFromAcpi()
@@ -632,24 +1016,31 @@ namespace PreySense.Frontend.ViewModels
                 {
                     key.SetValue("QuietPl1", CustomQuietPl1);
                     key.SetValue("QuietPl2", CustomQuietPl2);
+                    key.SetValue("EcoPl1", CustomEcoPl1);
+                    key.SetValue("EcoPl2", CustomEcoPl2);
                     key.SetValue("BalancedPl1", CustomBalancedPl1);
                     key.SetValue("BalancedPl2", CustomBalancedPl2);
                     key.SetValue("PerfPl1", CustomPerfPl1);
                     key.SetValue("PerfPl2", CustomPerfPl2);
                     key.SetValue("TurboPl1", CustomTurboPl1);
                     key.SetValue("TurboPl2", CustomTurboPl2);
-                    key.SetValue("TauSeconds", TauSeconds);
-                    key.SetValue("PcccCeilingWatts", Math.Clamp(PcccCeilingWatts, IntelPlatformPowerLimitMinimumWatts, CpuPowerLimitConfiguration.MaxPowerLimitWatts));
+                    key.SetValue("TauSeconds", TauForMode(ActivePowerMode));
+                    key.SetValue("QuietTau", CustomQuietTau);
+                    key.SetValue("EcoTau", CustomEcoTau);
+                    key.SetValue("BalancedTau", CustomBalancedTau);
+                    key.SetValue("PerfTau", CustomPerfTau);
+                    key.SetValue("TurboTau", CustomTurboTau);
                 }
 
                 // Also persist GPU limits
                 SaveGpuLimitsToRegistry();
 
                 // Sync with ProfileManager per-mode profiles
-                SyncProfile(0x00, CustomQuietPl1, CustomQuietPl2);
-                SyncProfile(0x01, CustomBalancedPl1, CustomBalancedPl2);
-                SyncProfile(0x04, CustomPerfPl1, CustomPerfPl2);
-                SyncProfile(0x05, CustomTurboPl1, CustomTurboPl2);
+                SyncProfile(0x00, CustomQuietPl1, CustomQuietPl2, CustomQuietTau);
+                SyncProfile(0x06, CustomEcoPl1, CustomEcoPl2, CustomEcoTau);
+                SyncProfile(0x01, CustomBalancedPl1, CustomBalancedPl2, CustomBalancedTau);
+                SyncProfile(0x04, CustomPerfPl1, CustomPerfPl2, CustomPerfTau);
+                SyncProfile(0x05, CustomTurboPl1, CustomTurboPl2, CustomTurboTau);
 
                 StatusMessage = "Power limits saved to registry.";
             }
@@ -659,14 +1050,14 @@ namespace PreySense.Frontend.ViewModels
             }
         }
 
-        private void SyncProfile(byte mode, int pl1, int pl2)
+        private void SyncProfile(byte mode, int pl1, int pl2, int tauSeconds)
         {
             try
             {
                 var profile = PreySense.Mode.ProfileManager.LoadProfile(mode);
                 profile.CpuPl1 = pl1;
                 profile.CpuPl2 = pl2;
-                profile.TauSeconds = TauSeconds;
+                profile.TauSeconds = tauSeconds;
                 PreySense.Mode.ProfileManager.SaveProfile(profile);
             }
             catch { }

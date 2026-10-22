@@ -317,25 +317,15 @@ namespace PreySense.Tests
         }
 
         [TestMethod]
-        public void PcccPatch_UsesConfiguredCeiling()
+        public void PcccPatch_AlwaysStores999Watts()
         {
             string xml = OpenCorePowerLimitManager.BuildOpenCorePcccPatchXml(150);
-            Assert.IsTrue(xml.Contains("85W to 150W"));
-            byte[] expected = Convert.FromBase64String("cAwITAEAiIOIUENDWAEAAQA=");
-            BitConverter.GetBytes(150_000).CopyTo(expected, 2);
-            Assert.IsTrue(xml.Contains(Convert.ToBase64String(expected)));
-        }
-
-        [TestMethod]
-        public void PcccPatch_ClampsCeilingToFactoryMinAnd999Max()
-        {
-            Assert.AreEqual(999, CpuPowerLimitConfiguration.MaxPowerLimitWatts);
-            string belowMin = OpenCorePowerLimitManager.BuildOpenCorePcccPatchXml(50);
-            Assert.Contains("85W to 85W", belowMin);
-            string atMax = OpenCorePowerLimitManager.BuildOpenCorePcccPatchXml(999);
-            Assert.Contains("85W to 999W", atMax);
-            string aboveMax = OpenCorePowerLimitManager.BuildOpenCorePcccPatchXml(2000);
-            Assert.Contains("85W to 999W", aboveMax);
+            Assert.Contains("85W to 999W", xml);
+            byte[] expected = Convert.FromBase64String(OpenCorePowerLimitManager.PcccStoreFindBase64);
+            BitConverter.GetBytes(999_000).CopyTo(expected, 2);
+            Assert.AreEqual(Convert.ToBase64String(expected), OpenCorePowerLimitManager.PcccStoreReplaceBase64);
+            Assert.Contains(OpenCorePowerLimitManager.PcccStoreReplaceBase64, OpenCorePowerLimitManager.BuildOpenCorePcccPatchXml(50));
+            Assert.Contains(OpenCorePowerLimitManager.PcccStoreReplaceBase64, OpenCorePowerLimitManager.BuildOpenCorePcccPatchXml(2000));
         }
 
         [TestMethod]
@@ -349,7 +339,7 @@ namespace PreySense.Tests
             Assert.IsFalse(plist.Contains("_Q30"));
             Assert.IsFalse(plist.Contains("WMBH"));
             Assert.IsTrue(plist.Contains("cAwITAEAiIOIUENDWAEAAQA="));
-            Assert.IsFalse(plist.Contains("cAxADQMAiIOIUENDWAEAAQA="), "PCCC replace must stay at the ACPI factory 85W encoding");
+            Assert.Contains(OpenCorePowerLimitManager.PcccStoreReplaceBase64, plist);
             Assert.IsTrue(plist.Contains("RTNEVAoO"));
             Assert.IsTrue(plist.Contains("<string>Optional</string>"));
             Assert.IsFalse(plist.Contains("<string>Secure</string>"));
@@ -380,7 +370,7 @@ namespace PreySense.Tests
             Assert.Contains("LimitPl2", acpiVm);
             Assert.Contains("EffectivePlatformPl1Limit", acpiVm);
             Assert.Contains("MaxPowerLimitWatts", acpiVm);
-            Assert.Contains("IntelPlatformPowerLimitMinimumWatts", acpiVm);
+            Assert.Contains("MaxPowerLimitWatts", acpiVm);
         }
 
         [TestMethod]
@@ -928,14 +918,14 @@ namespace PreySense.Tests
         [TestMethod]
         public void Test_GpuThermalTripPoint_StandardizedDefaults_And_WmiMethods()
         {
-            // Verify factory ACPI trip point constant (WMG3 = 79°C = 0x4F)
-            Assert.AreEqual(79, GpuPowerLimitConfiguration.FactoryGpuThermalTripPointCelsius);
+            Assert.AreEqual(81, GpuPowerLimitConfiguration.FactoryGpuThermalTripPointCelsius);
 
             var config = new GpuPowerLimitConfiguration();
-            Assert.AreEqual(79, config.QuietGpuTripPointCelsius, "Quiet mode must default to 79°C as in original ACPI");
-            Assert.AreEqual(79, config.BalancedGpuTripPointCelsius, "Balanced mode must default to 79°C as in original ACPI");
-            Assert.AreEqual(79, config.PerformanceGpuTripPointCelsius, "Performance mode must default to 79°C as in original ACPI");
-            Assert.AreEqual(79, config.TurboGpuTripPointCelsius, "Turbo mode must default to 79°C as in original ACPI");
+            Assert.AreEqual(81, config.QuietGpuTripPointCelsius);
+            Assert.AreEqual(81, config.EcoGpuTripPointCelsius);
+            Assert.AreEqual(81, config.BalancedGpuTripPointCelsius);
+            Assert.AreEqual(81, config.PerformanceGpuTripPointCelsius);
+            Assert.AreEqual(81, config.TurboGpuTripPointCelsius);
 
             // Verify SSDT-PREYDEV has Method 7 (SetGpuThermalTripPoint) and Method 8 (GetGpuThermalTripPoint)
             string stagingDsl = @"d:\Development\PreySense\acpi_staging\SSDT-PREYDEV.dsl";
@@ -979,14 +969,15 @@ namespace PreySense.Tests
                 var hw = new MockHardwareService();
                 var vm = new PreySense.Frontend.ViewModels.MainViewModel(hw);
 
-                // Should be restored as enabled from registry
-                Assert.IsTrue(vm.IsAcpiOverrideEnabled, "IsAcpiOverrideEnabled should persist from registry as true");
+                // A saved override cannot bypass the required factory calibration.
+                if (!vm.IsFactoryCalibrationComplete)
+                    Assert.IsFalse(vm.IsAcpiOverrideEnabled);
 
                 // Case A: OpenCore is NOT loaded
                 vm.IsOpenCoreLoaded = false;
                 Assert.AreEqual(System.Windows.Visibility.Visible, vm.AcpiOverrideDisabledBannerVisibility, "Banner must be visible when OpenCore is not loaded");
                 Assert.IsTrue(vm.AcpiOverrideDisabledBannerText.Contains("OpenCore is not loaded"), "Banner text must explain that OpenCore is not loaded");
-                Assert.IsFalse(vm.IsAcpiTuningAllowed, "Tuning must be disallowed when OpenCore is not loaded");
+                Assert.IsFalse(vm.CanEnableAcpiOverride, "Override must remain locked when OpenCore is not loaded");
 
                 // Case B: OpenCore IS loaded, but ACPI Override switch is turned OFF
                 vm.IsOpenCoreLoaded = true;
@@ -997,7 +988,7 @@ namespace PreySense.Tests
                     vm.AcpiOverrideDisabledBannerText,
                     "Banner text must match exact disabled override notice when OpenCore is loaded"
                 );
-                Assert.IsFalse(vm.IsAcpiTuningAllowed, "Tuning must be disallowed when override is off");
+                Assert.IsFalse(vm.CanEnableAcpiOverride, "Override must remain locked before calibration");
 
                 // Verify registry updated to 0
                 using (var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(subKey))
@@ -1007,10 +998,11 @@ namespace PreySense.Tests
                 }
 
                 // Case C: OpenCore IS loaded and ACPI Override switch is ON
+                vm.IsFactoryCalibrationComplete = true;
                 vm.ToggleAcpiOverride();
                 Assert.IsTrue(vm.IsAcpiOverrideEnabled);
                 Assert.AreEqual(System.Windows.Visibility.Collapsed, vm.AcpiOverrideDisabledBannerVisibility, "Banner must collapse when OpenCore is loaded and override enabled");
-                Assert.IsTrue(vm.IsAcpiTuningAllowed, "Tuning must be allowed when OpenCore is loaded and override is enabled");
+                Assert.IsTrue(vm.CanEnableAcpiOverride, "Override must be available after OpenCore and calibration are ready");
 
                 using (var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(subKey))
                 {
@@ -1046,7 +1038,7 @@ namespace PreySense.Tests
             Assert.IsTrue(xaml.Contains("Text=\"{Binding AcpiOverrideDisabledBannerText}\""), "Must bind dynamic banner text");
 
             // Verify controls container is locked when ACPI tuning is not allowed
-            Assert.IsTrue(xaml.Contains("IsEnabled=\"{Binding IsAcpiTuningAllowed}\""), "All mode tuning controls must be disabled when ACPI tuning is not allowed");
+            Assert.IsTrue(xaml.Contains("IsEnabled=\"{Binding IsAcpiOverrideEnabled}\""), "All mode tuning controls must be disabled when ACPI override is off");
 
             // Verify CPU Turbo Boost is removed
             Assert.IsFalse(xaml.Contains("ComboCpuBoost"), "ComboCpuBoost must be removed from ModeSettingsWindow.xaml");
@@ -1079,8 +1071,23 @@ namespace PreySense.Tests
 
             string acpiVm = File.ReadAllText(Path.Combine(root, "PreySense.Frontend", "ViewModels", "MainViewModel.Acpi.cs"));
             Assert.Contains("FactoryPowerProfileDetector.Capture", acpiVm);
-            Assert.Contains("CaptureFactoryPowerProfileAsync", acpiVm);
+            Assert.Contains("CalibrateFactoryProfilesAsync", acpiVm);
+            Assert.Contains("IsPlatformLimitCalibrated = (calibratedMask & 0x10) != 0", acpiVm);
+            Assert.Contains("BuildFactoryLimitsMessage", acpiVm);
+            Assert.Contains("ShowCancelButton = false", acpiVm);
             Assert.Contains("Task.Run", acpiVm);
+
+            string advancedXaml = File.ReadAllText(Path.Combine(root, "PreySense.Frontend", "Views", "AdvancedSettingsWindow.xaml"));
+            Assert.Contains("Factory Profile Calibration", advancedXaml);
+            Assert.Contains("CalibrateFactoryProfilesCommand", advancedXaml);
+            Assert.Contains("IsEnabled=\"{Binding CanEnableAcpiOverride}\"", advancedXaml);
+            Assert.Contains("IsEnabled=\"{Binding IsOpenCoreLoaded}\"", advancedXaml);
+            Assert.DoesNotContain("PL1 Platform Power Limit", advancedXaml);
+            Assert.DoesNotContain("CanEditPlatformPowerLimit", advancedXaml);
+            Assert.DoesNotContain("Text=\"{Binding FactoryCalibrationStatus}\"", advancedXaml);
+
+            string mainWindowCs = File.ReadAllText(Path.Combine(root, "PreySense.Frontend", "MainWindow.xaml.cs"));
+            Assert.DoesNotContain("CaptureFactoryPowerProfileAsync", mainWindowCs);
         }
 
         [TestMethod]
@@ -1100,24 +1107,62 @@ namespace PreySense.Tests
             var profile = new PreySense.Mode.GameProfile { ExeName = "r5apex.exe", PowerMode = 0x05, CpuPl1 = 85, CpuPl2 = 140 };
             Assert.AreEqual("r5apex", profile.ProcessName);
             Assert.AreEqual("Turbo", profile.ModeTitle);
+            var ecoProfile = new PreySense.Mode.GameProfile { ExeName = "battery-game.exe", PowerMode = 0x06 };
+            Assert.AreEqual("Eco", ecoProfile.ModeTitle);
             Assert.AreEqual(PreySense.Core.Acpi.CpuPowerLimitConfiguration.FactoryTauSeconds, profile.TauSeconds);
             Assert.AreEqual(PreySense.Core.Acpi.GpuPowerLimitConfiguration.FactoryGpuThermalTripPointCelsius, profile.GpuThermalTripCelsius);
 
             string gamesXaml = File.ReadAllText(Path.Combine(root, "PreySense.Frontend", "Views", "GamesWindow.xaml"));
             Assert.Contains("Visibility=\"{Binding AcpiOverrideDisabledBannerVisibility}\"", gamesXaml);
             Assert.Contains("Text=\"{Binding AcpiOverrideDisabledBannerText}\"", gamesXaml);
-            Assert.Contains("IsEnabled=\"{Binding IsAcpiTuningAllowed}\"", gamesXaml);
+            Assert.Contains("IsEnabled=\"{Binding IsAcpiOverrideEnabled}\"", gamesXaml);
             Assert.Contains("Burst Window [Tau]", gamesXaml);
             Assert.Contains("GPU Power Limit", gamesXaml);
             Assert.Contains("GPU Thermal Trip Point [WMG3]", gamesXaml);
 
             string gamesVm = File.ReadAllText(Path.Combine(root, "PreySense.Frontend", "ViewModels", "MainViewModel.Games.cs"));
+            Assert.Contains("{ \"Eco\", \"Quiet\", \"Balanced\", \"Performance\", \"Turbo\" }", gamesVm);
+            Assert.Contains("\"Eco\" => 0x06", gamesVm);
             Assert.Contains("ApplyGameProfileAsync", gamesVm);
             Assert.Contains("GameLaunchWatcher", gamesVm);
             Assert.Contains("SetCpuPowerLimits", gamesVm);
             Assert.Contains("SetGpuPowerLimit", gamesVm);
             Assert.Contains("SetGpuThermalTripPoint", gamesVm);
-            Assert.Contains("if (!IsAcpiTuningAllowed)", gamesVm);
+            Assert.Contains("if (!IsAcpiOverrideEnabled)", gamesVm);
+        }
+
+        [TestMethod]
+        public void Eco_And_Quiet_Power_Profiles_Remain_Independent()
+        {
+            Assert.AreEqual(55, PreySense.Core.Acpi.CpuPowerLimitConfiguration.FactoryQuietPl1);
+            Assert.AreEqual(45, PreySense.Core.Acpi.CpuPowerLimitConfiguration.FactoryEcoPl1);
+            Assert.AreEqual(50, PreySense.Core.Acpi.CpuPowerLimitConfiguration.FactoryEcoPl2);
+            var cpu = new PreySense.Core.Acpi.CpuPowerLimitConfiguration
+            {
+                EcoPl1 = 25,
+                EcoPl2 = 65,
+                QuietPl1 = 45,
+                QuietPl2 = 140
+            };
+            var gpu = new PreySense.Core.Acpi.GpuPowerLimitConfiguration
+            {
+                EcoGpuWatts = 55,
+                QuietGpuWatts = 85,
+                EcoGpuTripPointCelsius = 75,
+                QuietGpuTripPointCelsius = 79
+            };
+
+            Assert.AreNotEqual(cpu.EcoPl1, cpu.QuietPl1);
+            Assert.AreNotEqual(cpu.EcoPl2, cpu.QuietPl2);
+            Assert.AreNotEqual(gpu.EcoGpuWatts, gpu.QuietGpuWatts);
+            Assert.AreNotEqual(gpu.EcoGpuTripPointCelsius, gpu.QuietGpuTripPointCelsius);
+
+            string root = GetSolutionRoot();
+            string manager = File.ReadAllText(Path.Combine(root, "PreySense.Core", "Acpi", "OpenCorePowerLimitManager.cs"));
+            Assert.Contains("Case (0x04) // Eco Mode", manager);
+            Assert.Contains("ePl1Raw", manager);
+            Assert.Contains("ePl2Raw", manager);
+            Assert.Contains("M5CT", manager);
         }
 
         [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]

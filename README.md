@@ -72,12 +72,19 @@ OpenCore is optional. Without it, modes, fans, lighting, GPU switching, and the 
 
 **Install to Boot Drive** (from Settings):
 
-1. PreySense creates a small hidden EFI partition labeled `PREYSENSE`.
-2. Reboot into BIOS. Set a supervisor password if asked.
-3. Enroll the PreySense EFI files as trusted for execution.
-4. Put PreySense first in the boot order. Save and exit.
+1. PreySense deletes any existing `PREYSENSE` partition, then creates a new small hidden EFI partition with that label.
+2. The partition has no Windows drive letter. BIOS can still browse it.
+3. Enroll all three files. Repeat the trusted-file step for each one:
+   1. Open BIOS → Security. Set a supervisor password if asked, then reboot.
+   2. Open BIOS → Security → **Select an UEFI file as trusted for executing**.
+      `PREYSENSE` → `EFI` → `BOOT` → `BOOTX64.EFI`
+   3. Repeat: `PREYSENSE` → `EFI` → `OC` → `OpenCore.efi`
+   4. Repeat: `PREYSENSE` → `EFI` → `OC` → `Drivers` → `OpenRuntime.efi`
+   5. Boot → put PreySense first in the boot order. Save and exit.
 
-USB install is the same files on a FAT32 stick; use the boot menu and unplug to revert.
+The installer asks **Restart Windows now? (Y/N)**. Y restarts immediately.
+
+USB install is the same files on a FAT32 stick. Restart, press F12, and select the USB drive. Unplug it to boot stock Windows.
 
 ## Building
 

@@ -6,7 +6,7 @@
     Provider("WmiProv"),
     WMI,
     Description("PreySense Dedicated Hardware Control Interface"),
-    Guid("{D73644F9-51A6-43DE-87BC-9D1B0BE8C931}"),
+    Guid("{09750C8E-7D05-406A-A517-E3EE0DDB63FF}"),
     locale("MS\\0x409")
 ]
 class PreySenseControl

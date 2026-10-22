@@ -39,6 +39,8 @@ namespace PreySense.Core.Acpi
             // Convert wattage (W) to MCHBAR raw units (W * 8)
             int qPl1Raw = config.QuietPl1 * 8;
             int qPl2Raw = config.QuietPl2 * 8;
+            int ePl1Raw = config.EcoPl1 * 8;
+            int ePl2Raw = config.EcoPl2 * 8;
             int bPl1Raw = config.BalancedPl1 * 8;
             int bPl2Raw = config.BalancedPl2 * 8;
             int pPl1Raw = config.PerformancePl1 * 8;
@@ -86,6 +88,11 @@ namespace PreySense.Core.Acpi
             sb.AppendLine("                {");
             sb.AppendLine($"                    \\PPL1 = 0x{qPl1Raw:X4} // {config.QuietPl1}W");
             sb.AppendLine($"                    \\PPL2 = 0x{qPl2Raw:X4} // {config.QuietPl2}W");
+            sb.AppendLine("                }");
+            sb.AppendLine("                Case (0x04) // Eco Mode");
+            sb.AppendLine("                {");
+            sb.AppendLine($"                    \\PPL1 = 0x{ePl1Raw:X4} // {config.EcoPl1}W");
+            sb.AppendLine($"                    \\PPL2 = 0x{ePl2Raw:X4} // {config.EcoPl2}W");
             sb.AppendLine("                }");
             sb.AppendLine("            }");
             sb.AppendLine();

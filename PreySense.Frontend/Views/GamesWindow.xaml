@@ -47,7 +47,7 @@
                 </Grid>
             </Border>
 
-            <StackPanel Grid.Row="2" Margin="{StaticResource WindowContentMargin}" IsEnabled="{Binding IsAcpiTuningAllowed}">
+            <StackPanel Grid.Row="2" Margin="{StaticResource WindowContentMargin}" IsEnabled="{Binding IsAcpiOverrideEnabled}">
                 <Border Style="{StaticResource OriginalSectionPanelStyle}" Margin="0,0,0,8">
                     <StackPanel>
                         <Grid Style="{StaticResource OriginalSectionTitlePanelStyle}">

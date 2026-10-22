@@ -52,12 +52,6 @@ namespace PreySense.Frontend
                 OverlayBridge.Warmup();
                 OverlayBridge.StartIfNeeded();
             };
-            ContentRendered += (_, _) =>
-            {
-                if (DataContext is MainViewModel renderedVm)
-                    _ = renderedVm.CaptureFactoryPowerProfileAsync();
-            };
-
             // Setup Predator Sense Key & Combos
             try
             {
@@ -246,18 +240,23 @@ namespace PreySense.Frontend
                 _autoHiddenWindows.Clear();
                 _autoHiddenActiveWindow = Application.Current.Windows
                     .OfType<Window>()
-                    .FirstOrDefault(window => window.IsActive);
+                    .FirstOrDefault(window => window.IsActive && window is not Views.ModeToastWindow);
 
-                _autoHiddenWindows.AddRange(Application.Current.Windows
-                    .OfType<Window>()
-                    .Where(window => window != this &&
-                                     window is not Views.ModeToastWindow &&
-                                     window.IsVisible));
+                foreach (Window window in Application.Current.Windows.OfType<Window>().ToArray())
+                {
+                    if (!window.IsVisible)
+                        continue;
+                    if (window is Views.ModeToastWindow)
+                    {
+                        window.Hide();
+                        continue;
+                    }
+                    if (window != this)
+                        _autoHiddenWindows.Add(window);
+                }
 
                 foreach (Window window in _autoHiddenWindows)
-                {
                     window.Hide();
-                }
                 Hide();
             });
         }
@@ -287,14 +286,13 @@ namespace PreySense.Frontend
         {
             RunOnUi(() =>
             {
-                if (IsVisible && WindowState != WindowState.Minimized && IsActive)
-                {
-                    Hide();
-                }
+                bool anyVisible = Application.Current.Windows
+                    .OfType<Window>()
+                    .Any(window => window.IsVisible);
+                if (anyVisible)
+                    HideApplicationWindowsForAutoHide();
                 else
-                {
                     ShowAndRestore();
-                }
             });
         }
 

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Removes PreySense OpenCore, firmware boot options, and the hidden boot partition.
+    Removes the hidden PreySense OpenCore boot partition.
 #>
 #Requires -RunAsAdministrator
 
@@ -8,74 +8,12 @@ $ErrorActionPreference = 'Stop'
 $partitionLabel = 'PREYSENSE'
 $efiPartitionType = [guid]'C12A7328-F81F-11D2-BA4B-00A0C93EC93B'
 $legacyPartitionType = [guid]'C0DE0001-5052-4559-534E-4F4330310001'
-$protectedBcdIds = '^(fwbootmgr|bootmgr|current|default|memdiag|ntldr|recoverysequence)$'
 
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host " PreySense OpenCore Uninstaller" -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
-function Get-FreeDriveLetter {
-    $used = @{}
-    Get-PSDrive -PSProvider FileSystem | ForEach-Object { $used[$_.Name] = $true }
-    foreach ($letter in @('S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z')) {
-        if (-not $used.ContainsKey($letter)) { return $letter }
-    }
-    throw "No free drive letter is available."
-}
-
-function Remove-PreySenseBootEntries {
-    Write-Host "`n1. Removing PreySense / PreyBoost boot entries..." -ForegroundColor Yellow
-    $bcdList = bcdedit /enum all | Out-String
-    $blocks = [regex]::Split($bcdList, '(?m)(?=^identifier\s+)')
-    $removed = 0
-    foreach ($block in $blocks) {
-        $idMatch = [regex]::Match($block, '(?im)^identifier\s+(\{[a-fA-F0-9-]+\})')
-        if (-not $idMatch.Success) { continue }
-        $guid = $idMatch.Groups[1].Value
-        $bare = $guid.Trim('{}')
-        if ($bare -match $protectedBcdIds) { continue }
-
-        $ours = $block -match 'PreySense|PreyBoost' -or $block -match '\\EFI\\OC\\OpenCore\.efi'
-        if (-not $ours) { continue }
-
-        Write-Host "   Deleting boot entry $guid..." -ForegroundColor Yellow
-        bcdedit /delete $guid /f | Out-Null
-        $removed++
-    }
-    if ($removed -eq 0) {
-        Write-Host "   No PreySense boot entries found." -ForegroundColor Green
-    } else {
-        Write-Host "   Removed $removed boot entry(ies)." -ForegroundColor Green
-    }
-}
-
-function Remove-WindowsEspOpenCore {
-    param([string]$Letter)
-    Write-Host "`n2. Removing leftover OpenCore from the Windows ESP..." -ForegroundColor Yellow
-    $mounted = $false
-    try {
-        mountvol "${Letter}:" /s
-        $mounted = $true
-        $targetOc = Join-Path "${Letter}:\EFI" "OC"
-        if (Test-Path $targetOc) {
-            Remove-Item -LiteralPath $targetOc -Recurse -Force
-            Write-Host "   Deleted $targetOc." -ForegroundColor Green
-        } else {
-            Write-Host "   Windows ESP has no OpenCore folder." -ForegroundColor Green
-        }
-    } catch {
-        Write-Host "   Could not clean Windows ESP: $($_.Exception.Message)" -ForegroundColor Yellow
-    } finally {
-        if ($mounted) {
-            mountvol "${Letter}:" /d | Out-Null
-        }
-    }
-}
-
-Remove-PreySenseBootEntries
-Remove-WindowsEspOpenCore -Letter (Get-FreeDriveLetter)
-
-Write-Host "`n3. Removing the hidden PreySense partition..." -ForegroundColor Yellow
+Write-Host "`n1. Removing the hidden PreySense partition..." -ForegroundColor Yellow
 $parts = @()
 foreach ($volume in Get-Volume | Where-Object { $_.FileSystemLabel -eq $partitionLabel }) {
     if ($volume.DriveLetter) {

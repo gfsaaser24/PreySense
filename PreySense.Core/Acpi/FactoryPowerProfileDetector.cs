@@ -27,6 +27,17 @@ namespace PreySense.Core.Acpi
             bool cpuRead = false;
             bool tauRead = false;
             var live = PreySenseWmiDeviceClient.GetPowerSnapshot();
+            int? tauSeconds = null;
+            if (live.TauEncoded.HasValue)
+            {
+                tauSeconds = live.TauEncoded.Value == CpuPowerLimitConfiguration.InfiniteTauEncodedValue
+                    ? CpuPowerLimitConfiguration.InfiniteTauSliderValue
+                    : CpuPowerLimitConfiguration.DecodeTauSeconds(live.TauEncoded.Value);
+                cpu.TauSeconds = tauSeconds.Value;
+                SetCpuModeTau(cpu, activeMode, tauSeconds.Value);
+                tauRead = true;
+            }
+
             if (live.Pl1Milliwatts > 0 && live.Pl2Milliwatts > 0)
             {
                 int pl1 = (int)Math.Round(live.Pl1Milliwatts / 1000.0);
@@ -34,16 +45,8 @@ namespace PreySense.Core.Acpi
                 if (pl1 is >= 5 and <= CpuPowerLimitConfiguration.MaxPowerLimitWatts &&
                     pl2 >= pl1 && pl2 <= CpuPowerLimitConfiguration.MaxPowerLimitWatts)
                 {
-                    SetCpuMode(cpu, activeMode, pl1, pl2);
+                    SetCpuMode(cpu, activeMode, pl1, pl2, tauSeconds);
                     cpuRead = true;
-                }
-
-                if (live.TauEncoded.HasValue)
-                {
-                    cpu.TauSeconds = live.TauEncoded.Value == CpuPowerLimitConfiguration.InfiniteTauEncodedValue
-                        ? CpuPowerLimitConfiguration.InfiniteTauSliderValue
-                        : CpuPowerLimitConfiguration.DecodeTauSeconds(live.TauEncoded.Value);
-                    tauRead = true;
                 }
             }
 
@@ -64,14 +67,29 @@ namespace PreySense.Core.Acpi
             return new FactoryPowerProfileSnapshot(cpu, gpu, activeMode, cpuRead, gpuPowerRead, gpuTripRead, tauRead);
         }
 
-        private static void SetCpuMode(CpuPowerLimitConfiguration config, byte mode, int pl1, int pl2)
+        private static void SetCpuMode(CpuPowerLimitConfiguration config, byte mode, int pl1, int pl2, int? tauSeconds)
         {
             switch (mode)
             {
                 case 0x05: config.TurboPl1 = pl1; config.TurboPl2 = pl2; break;
                 case 0x04: config.PerformancePl1 = pl1; config.PerformancePl2 = pl2; break;
                 case 0x01: config.BalancedPl1 = pl1; config.BalancedPl2 = pl2; break;
+                case 0x06: config.EcoPl1 = pl1; config.EcoPl2 = pl2; break;
                 default: config.QuietPl1 = pl1; config.QuietPl2 = pl2; break;
+            }
+            if (tauSeconds.HasValue)
+                SetCpuModeTau(config, mode, tauSeconds.Value);
+        }
+
+        private static void SetCpuModeTau(CpuPowerLimitConfiguration config, byte mode, int tauSeconds)
+        {
+            switch (mode)
+            {
+                case 0x05: config.TurboTauSeconds = tauSeconds; break;
+                case 0x04: config.PerformanceTauSeconds = tauSeconds; break;
+                case 0x01: config.BalancedTauSeconds = tauSeconds; break;
+                case 0x06: config.EcoTauSeconds = tauSeconds; break;
+                default: config.QuietTauSeconds = tauSeconds; break;
             }
         }
 
@@ -82,6 +100,7 @@ namespace PreySense.Core.Acpi
                 case 0x05: config.TurboGpuWatts = watts; break;
                 case 0x04: config.PerformanceGpuWatts = watts; break;
                 case 0x01: config.BalancedGpuWatts = watts; break;
+                case 0x06: config.EcoGpuWatts = watts; break;
                 default: config.QuietGpuWatts = watts; break;
             }
         }
@@ -93,6 +112,7 @@ namespace PreySense.Core.Acpi
                 case 0x05: config.TurboGpuTripPointCelsius = temp; break;
                 case 0x04: config.PerformanceGpuTripPointCelsius = temp; break;
                 case 0x01: config.BalancedGpuTripPointCelsius = temp; break;
+                case 0x06: config.EcoGpuTripPointCelsius = temp; break;
                 default: config.QuietGpuTripPointCelsius = temp; break;
             }
         }

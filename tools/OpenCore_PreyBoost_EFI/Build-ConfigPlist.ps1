@@ -1,8 +1,6 @@
 param(
     [string]$SourcePlist,
-    [string]$DestinationPlist,
-    [ValidateRange(85, 999)]
-    [int]$PcccCeilingWatts = 85
+    [string]$DestinationPlist
 )
 $ErrorActionPreference = 'Stop'
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -44,13 +42,13 @@ $add = Read-Fragment @'
 '@
 $delete = Read-Fragment '<array/>'
 $pcccReplacement = [Convert]::FromBase64String('cAwITAEAiIOIUENDWAEAAQA=')
-[BitConverter]::GetBytes($PcccCeilingWatts * 1000).CopyTo($pcccReplacement, 2)
+[BitConverter]::GetBytes([uint32]999000).CopyTo($pcccReplacement, 2)
 $pcccReplacementBase64 = [Convert]::ToBase64String($pcccReplacement)
 $patch = Read-Fragment @"
 <array>
   <dict>
     <key>Base</key><string></string><key>BaseSkip</key><integer>0</integer>
-    <key>Comment</key><string>PreySense: Set Intel IPF PCCC PL1 Limit (85W to ${PcccCeilingWatts}W)</string>
+    <key>Comment</key><string>PreySense: Set Intel IPF PCCC PL1 Limit (85W to 999W)</string>
     <key>Count</key><integer>1</integer><key>Enabled</key><true/>
     <key>Find</key><data>cAwITAEAiIOIUENDWAEAAQA=</data><key>Limit</key><integer>0</integer>
     <key>Mask</key><data></data><key>OemTableId</key><data>QUNSUFJEQ1Q=</data>

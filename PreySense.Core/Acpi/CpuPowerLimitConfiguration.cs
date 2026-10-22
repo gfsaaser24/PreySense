@@ -45,13 +45,18 @@ namespace PreySense.Core.Acpi
             return (int)Math.Round(Math.Pow(2, exponent) * (1.0 + fraction / 4.0) * RaplTimeUnitSeconds);
         }
         // Factory AC Hardware Constants from PHN16S-71 ERM4 EC Table (0xFE8004A0)
-        // Quiet:    0x2D (45W)  / 0x8C (140W)
-        // Balanced: 0x41 (65W)  / 0x8C (140W)
-        // Perf:     0x4B (75W)  / 0x8C (140W)
-        // Turbo:    0x55 (85W)  / 0x8C (140W)
-        // Tau:      0x38 (56s)
-        public const int FactoryQuietPl1 = 45;
+        // Quiet:    55W / 140W
+        // Eco:      45W / 50W
+        // Balanced: 65W / 140W
+        // Perf:     75W / 140W
+        // Turbo:    85W / 140W
+        // Tau:      0x6F (56 s). RAPL window = 2^Y * (1 + F/4) / 1024.
+        public const int FactoryQuietPl1 = 55;
         public const int FactoryQuietPl2 = 140;
+        // Acer Eco M5 profile, verified by forcing a firmware profile reload and
+        // reading PPL1/PPL2 through PREYDEV on the PHN16S-71.
+        public const int FactoryEcoPl1 = 45;
+        public const int FactoryEcoPl2 = 50;
 
         public const int FactoryBalancedPl1 = 65;
         public const int FactoryBalancedPl2 = 140;
@@ -68,6 +73,8 @@ namespace PreySense.Core.Acpi
         // Custom Target Limits (Watts)
         public int QuietPl1 { get; set; } = FactoryQuietPl1;
         public int QuietPl2 { get; set; } = FactoryQuietPl2;
+        public int EcoPl1 { get; set; } = FactoryEcoPl1;
+        public int EcoPl2 { get; set; } = FactoryEcoPl2;
 
         public int BalancedPl1 { get; set; } = FactoryBalancedPl1;
         public int BalancedPl2 { get; set; } = FactoryBalancedPl2;
@@ -78,6 +85,13 @@ namespace PreySense.Core.Acpi
         public int TurboPl1 { get; set; } = FactoryTurboPl1;
         public int TurboPl2 { get; set; } = FactoryTurboPl2;
 
+        public int QuietTauSeconds { get; set; } = FactoryTauSeconds;
+        public int EcoTauSeconds { get; set; } = FactoryTauSeconds;
+        public int BalancedTauSeconds { get; set; } = FactoryTauSeconds;
+        public int PerformanceTauSeconds { get; set; } = FactoryTauSeconds;
+        public int TurboTauSeconds { get; set; } = FactoryTauSeconds;
+
+        /// <summary>Last captured or applied window. Mode-specific fields are the stored values.</summary>
         public int TauSeconds { get; set; } = FactoryTauSeconds;
 
         /// <summary>
@@ -89,6 +103,11 @@ namespace PreySense.Core.Acpi
             if (QuietPl1 < 10 || QuietPl1 > MaxPowerLimitWatts || QuietPl2 < QuietPl1 || QuietPl2 > MaxPowerLimitWatts)
             {
                 errorMessage = $"Quiet limits out of range (PL1: 10-{MaxPowerLimitWatts}W, PL2: PL1-{MaxPowerLimitWatts}W).";
+                return false;
+            }
+            if (EcoPl1 < 10 || EcoPl1 > MaxPowerLimitWatts || EcoPl2 < EcoPl1 || EcoPl2 > MaxPowerLimitWatts)
+            {
+                errorMessage = $"Eco limits out of range (PL1: 10-{MaxPowerLimitWatts}W, PL2: PL1-{MaxPowerLimitWatts}W).";
                 return false;
             }
             if (BalancedPl1 < 10 || BalancedPl1 > MaxPowerLimitWatts || BalancedPl2 < BalancedPl1 || BalancedPl2 > MaxPowerLimitWatts)
@@ -115,12 +134,19 @@ namespace PreySense.Core.Acpi
         {
             QuietPl1 = FactoryQuietPl1;
             QuietPl2 = FactoryQuietPl2;
+            EcoPl1 = FactoryEcoPl1;
+            EcoPl2 = FactoryEcoPl2;
             BalancedPl1 = FactoryBalancedPl1;
             BalancedPl2 = FactoryBalancedPl2;
             PerformancePl1 = FactoryPerformancePl1;
             PerformancePl2 = FactoryPerformancePl2;
             TurboPl1 = FactoryTurboPl1;
             TurboPl2 = FactoryTurboPl2;
+            QuietTauSeconds = FactoryTauSeconds;
+            EcoTauSeconds = FactoryTauSeconds;
+            BalancedTauSeconds = FactoryTauSeconds;
+            PerformanceTauSeconds = FactoryTauSeconds;
+            TurboTauSeconds = FactoryTauSeconds;
             TauSeconds = FactoryTauSeconds;
         }
     }

@@ -1,5 +1,5 @@
 $classes = Get-CimClass -Namespace 'root\wmi'
-$matched = $classes | Where-Object { $_.CimClassName -match 'Prey|D73644F9|PRYW|WM01' }
+$matched = $classes | Where-Object { $_.CimClassName -match 'Prey|09750C8E|PRYW|WM01' }
 Write-Output "Matched classes count: $($matched.Count)"
 foreach ($m in $matched) {
     Write-Output "Class: $($m.CimClassName)"

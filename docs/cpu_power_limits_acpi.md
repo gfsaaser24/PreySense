@@ -23,7 +23,7 @@ Factory values on this chassis (ERM4 AC table, also used by **Reset**):
 | Performance | 75 W | 140 W | 56 s |
 | Turbo | 85 W | 140 W | 56 s |
 
-A mode switch writes that mode’s stored limits. Game profiles write their own PL1/PL2/Tau after switching mode. Without OpenCore, Acer’s profile still changes; these RAPL writes do not stick.
+A mode switch writes that mode’s stored PL1, PL2, and Tau. Each performance mode keeps its own burst window. Game profiles can still override Tau while that game is running. Without OpenCore, Acer’s profile still changes; these RAPL writes do not stick.
 
 ---
 
@@ -53,7 +53,7 @@ Power fields are in 1/8 W (0.125 W). Watts × 8 = register value (`55 W` → `44
 
 `PCCC()` in the OEM SSDT advertises a capability ceiling. On the 47 W SKU this chassis uses, that dword is **85,000 mW**. Intel IPF (`ipf_cpu.sys`, `ipfsvc`) treats it as the maximum sustained PL1 and pulls Dynamic PL1 back to 85 W even if RAPL was set higher.
 
-OpenCore patches that dword to the **PL1 Platform Power Limit** from Settings (default 85, user-settable). That is an advertised ceiling, not the live PL1. Live PL1 is still method 3.
+OpenCore replaces that 85,000 mW literal with 999,000 mW. The patch is applied once at install and takes effect on the next boot. Mode PL1 is still method 3 and can be set up to 999 W.
 
 Disabling Intel DTT/IPF services is optional and is **not** required for PreySense. The PCCC patch plus PREYDEV writes are the supported path.
 
@@ -73,7 +73,7 @@ seconds ≈ 2^Y × (1 + F/4) × (1/1024)
 
 ## Runtime WMI (`PreySenseControl`)
 
-Class `root\WMI\PreySenseControl`, GUID `{D73644F9-51A6-43DE-87BC-9D1B0BE8C931}`, method `WM01`:
+Class `root\WMI\PreySenseControl`, GUID `{09750C8E-7D05-406A-A517-E3EE0DDB63FF}`, method `WM01`:
 
 | WmiMethodId | Name | Payload |
 | :---: | :--- | :--- |

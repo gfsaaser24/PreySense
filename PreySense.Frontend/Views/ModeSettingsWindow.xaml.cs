@@ -9,7 +9,7 @@ namespace PreySense.Frontend.Views
 {
     public partial class ModeSettingsWindow : Window
     {
-        private int _selectedModeIndex = 1; // 0=Quiet, 1=Balanced, 2=Perf, 3=Turbo
+        private int _selectedModeIndex = 2; // 0=Eco, 1=Quiet, 2=Balanced, 3=Perf, 4=Turbo
         private bool _isUpdatingUi;
 
         public ModeSettingsWindow()
@@ -31,10 +31,11 @@ namespace PreySense.Frontend.Views
             {
                 _selectedModeIndex = vm.ActivePowerMode switch
                 {
-                    0x00 or 0x06 => 0,
-                    0x04 => 2,
-                    0x05 => 3,
-                    _ => 1
+                    0x06 => 0,
+                    0x00 => 1,
+                    0x04 => 3,
+                    0x05 => 4,
+                    _ => 2
                 };
             }
 
@@ -65,10 +66,11 @@ namespace PreySense.Frontend.Views
 
         private string GetSelectedModeName() => _selectedModeIndex switch
         {
-            0 => "Quiet",
-            1 => "Balanced",
-            2 => "Performance",
-            3 => "Turbo",
+            0 => "Eco",
+            1 => "Quiet",
+            2 => "Balanced",
+            3 => "Performance",
+            4 => "Turbo",
             _ => "Custom"
         };
 
@@ -84,17 +86,19 @@ namespace PreySense.Frontend.Views
 
             int pl1 = _selectedModeIndex switch
             {
-                0 => vm.CustomQuietPl1,
-                1 => vm.CustomBalancedPl1,
-                2 => vm.CustomPerfPl1,
+                0 => vm.CustomEcoPl1,
+                1 => vm.CustomQuietPl1,
+                2 => vm.CustomBalancedPl1,
+                3 => vm.CustomPerfPl1,
                 _ => vm.CustomTurboPl1
             };
 
             int pl2 = _selectedModeIndex switch
             {
-                0 => vm.CustomQuietPl2,
-                1 => vm.CustomBalancedPl2,
-                2 => vm.CustomPerfPl2,
+                0 => vm.CustomEcoPl2,
+                1 => vm.CustomQuietPl2,
+                2 => vm.CustomBalancedPl2,
+                3 => vm.CustomPerfPl2,
                 _ => vm.CustomTurboPl2
             };
 
@@ -103,15 +107,17 @@ namespace PreySense.Frontend.Views
 
             if (SliderTau != null)
             {
-                SliderTau.Value = vm.TauSeconds;
-                if (LabelTau != null) LabelTau.Text = FormatTau(vm.TauSeconds);
+                int tau = vm.TauForModeIndex(_selectedModeIndex);
+                SliderTau.Value = tau;
+                if (LabelTau != null) LabelTau.Text = FormatTau(tau);
             }
 
             int gpuWatts = _selectedModeIndex switch
             {
-                0 => vm.CustomQuietGpuWatts,
-                1 => vm.CustomBalancedGpuWatts,
-                2 => vm.CustomPerfGpuWatts,
+                0 => vm.CustomEcoGpuWatts,
+                1 => vm.CustomQuietGpuWatts,
+                2 => vm.CustomBalancedGpuWatts,
+                3 => vm.CustomPerfGpuWatts,
                 _ => vm.CustomTurboGpuWatts
             };
             if (RowGpuPower != null)
@@ -122,9 +128,10 @@ namespace PreySense.Frontend.Views
 
             int gpuTrip = _selectedModeIndex switch
             {
-                0 => vm.CustomQuietGpuTripPoint,
-                1 => vm.CustomBalancedGpuTripPoint,
-                2 => vm.CustomPerfGpuTripPoint,
+                0 => vm.CustomEcoGpuTripPoint,
+                1 => vm.CustomQuietGpuTripPoint,
+                2 => vm.CustomBalancedGpuTripPoint,
+                3 => vm.CustomPerfGpuTripPoint,
                 _ => vm.CustomTurboGpuTripPoint
             };
             if (SliderGpuTripPoint != null)
@@ -138,14 +145,15 @@ namespace PreySense.Frontend.Views
 
         private void SliderGpuTripPoint_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
-            if (_isUpdatingUi || DataContext is not MainViewModel vm || !vm.IsAcpiTuningAllowed) return;
+            if (_isUpdatingUi || DataContext is not MainViewModel vm || !vm.IsAcpiOverrideEnabled) return;
             int val = (int)Math.Round(e.NewValue);
             switch (_selectedModeIndex)
             {
-                case 0: vm.CustomQuietGpuTripPoint = val; break;
-                case 1: vm.CustomBalancedGpuTripPoint = val; break;
-                case 2: vm.CustomPerfGpuTripPoint = val; break;
-                case 3: vm.CustomTurboGpuTripPoint = val; break;
+                case 0: vm.CustomEcoGpuTripPoint = val; break;
+                case 1: vm.CustomQuietGpuTripPoint = val; break;
+                case 2: vm.CustomBalancedGpuTripPoint = val; break;
+                case 3: vm.CustomPerfGpuTripPoint = val; break;
+                case 4: vm.CustomTurboGpuTripPoint = val; break;
             }
             vm.GpuThermalTripPointCelsius = val;
         }
@@ -179,16 +187,17 @@ namespace PreySense.Frontend.Views
             if (DataContext is not MainViewModel vm) return;
             switch (_selectedModeIndex)
             {
-                case 0: vm.CustomQuietPl1 = pl1; vm.CustomQuietPl2 = pl2; break;
-                case 1: vm.CustomBalancedPl1 = pl1; vm.CustomBalancedPl2 = pl2; break;
-                case 2: vm.CustomPerfPl1 = pl1; vm.CustomPerfPl2 = pl2; break;
-                case 3: vm.CustomTurboPl1 = pl1; vm.CustomTurboPl2 = pl2; break;
+                case 0: vm.CustomEcoPl1 = pl1; vm.CustomEcoPl2 = pl2; break;
+                case 1: vm.CustomQuietPl1 = pl1; vm.CustomQuietPl2 = pl2; break;
+                case 2: vm.CustomBalancedPl1 = pl1; vm.CustomBalancedPl2 = pl2; break;
+                case 3: vm.CustomPerfPl1 = pl1; vm.CustomPerfPl2 = pl2; break;
+                case 4: vm.CustomTurboPl1 = pl1; vm.CustomTurboPl2 = pl2; break;
             }
         }
 
         private void RowPl1_LostFocus(object sender, RoutedEventArgs e)
         {
-            if (_isUpdatingUi || DataContext is not MainViewModel vm || !vm.IsAcpiTuningAllowed) return;
+            if (_isUpdatingUi || DataContext is not MainViewModel vm || !vm.IsAcpiOverrideEnabled) return;
             var (pl1, pl2) = ReadClampedLimits(preferPl2: false);
             WriteClampedLimitsToEditor(pl1, pl2);
             StoreModeLimits(pl1, pl2);
@@ -196,7 +205,7 @@ namespace PreySense.Frontend.Views
 
         private void RowPl2_LostFocus(object sender, RoutedEventArgs e)
         {
-            if (_isUpdatingUi || DataContext is not MainViewModel vm || !vm.IsAcpiTuningAllowed) return;
+            if (_isUpdatingUi || DataContext is not MainViewModel vm || !vm.IsAcpiOverrideEnabled) return;
             var (pl1, pl2) = ReadClampedLimits(preferPl2: true);
             WriteClampedLimitsToEditor(pl1, pl2);
             StoreModeLimits(pl1, pl2);
@@ -213,17 +222,18 @@ namespace PreySense.Frontend.Views
             if (DataContext is not MainViewModel vm) return;
             switch (_selectedModeIndex)
             {
-                case 0: vm.CustomQuietGpuWatts = watts; break;
-                case 1: vm.CustomBalancedGpuWatts = watts; break;
-                case 2: vm.CustomPerfGpuWatts = watts; break;
-                case 3: vm.CustomTurboGpuWatts = watts; break;
+                case 0: vm.CustomEcoGpuWatts = watts; break;
+                case 1: vm.CustomQuietGpuWatts = watts; break;
+                case 2: vm.CustomBalancedGpuWatts = watts; break;
+                case 3: vm.CustomPerfGpuWatts = watts; break;
+                case 4: vm.CustomTurboGpuWatts = watts; break;
             }
             vm.GpuPowerTargetWatts = watts;
         }
 
         private void RowGpuPower_LostFocus(object sender, RoutedEventArgs e)
         {
-            if (_isUpdatingUi || DataContext is not MainViewModel vm || !vm.IsAcpiTuningAllowed) return;
+            if (_isUpdatingUi || DataContext is not MainViewModel vm || !vm.IsAcpiOverrideEnabled) return;
             int gpuW = ReadGpuWatts();
             if (RowGpuPower != null) RowGpuPower.Value = gpuW;
             StoreGpuWatts(gpuW);
@@ -235,7 +245,7 @@ namespace PreySense.Frontend.Views
             int val = (int)Math.Round(SliderTau.Value);
             LabelTau.Text = FormatTau(val);
 
-            if (!_isUpdatingUi && DataContext is MainViewModel vm && vm.IsAcpiTuningAllowed)
+            if (!_isUpdatingUi && DataContext is MainViewModel vm && vm.IsAcpiOverrideEnabled)
             {
                 if (_debounceTauTimer == null)
                 {
@@ -248,7 +258,7 @@ namespace PreySense.Frontend.Views
                         _debounceTauTimer.Stop();
                         if (SliderTau == null) return;
                         int finalVal = (int)Math.Round(SliderTau.Value);
-                        vm.TauSeconds = finalVal;
+                        vm.SetTauForModeIndex(_selectedModeIndex, finalVal);
                     };
                 }
                 _debounceTauTimer.Stop();
@@ -258,7 +268,7 @@ namespace PreySense.Frontend.Views
 
         private void ResetButton_Click(object sender, RoutedEventArgs e)
         {
-            if (DataContext is not MainViewModel vm || !vm.IsAcpiTuningAllowed) return;
+            if (DataContext is not MainViewModel vm || !vm.IsAcpiOverrideEnabled) return;
 
             string modeName = GetSelectedModeName();
             var confirmation = new CustomModalDialog
@@ -266,7 +276,7 @@ namespace PreySense.Frontend.Views
                 Owner = this,
                 Title = "PreySense • Reset Mode",
                 HeaderSubtitle = " • Reset Mode",
-                Message = $"Reset {modeName} to the captured factory power settings and apply them now?",
+                Message = $"Reset {modeName} to factory power settings and apply them now?",
                 ConfirmText = "Reset & Apply",
                 CancelText = "Cancel",
                 ShowCancelButton = true
@@ -288,14 +298,14 @@ namespace PreySense.Frontend.Views
 
         private void ApplyButton_Click(object sender, RoutedEventArgs e)
         {
-            if (DataContext is not MainViewModel vm || !vm.IsAcpiTuningAllowed) return;
+            if (DataContext is not MainViewModel vm || !vm.IsAcpiOverrideEnabled) return;
 
             var (pl1, pl2) = ReadClampedLimits(preferPl2: false);
             int tau = (int)Math.Round(SliderTau.Value);
 
             WriteClampedLimitsToEditor(pl1, pl2);
             StoreModeLimits(pl1, pl2);
-            vm.TauSeconds = tau;
+            vm.SetTauForModeIndex(_selectedModeIndex, tau);
             vm.Pl1Watts = pl1;
             vm.Pl2Watts = pl2;
 
@@ -308,10 +318,11 @@ namespace PreySense.Frontend.Views
                 int gpuTrip = (int)Math.Round(SliderGpuTripPoint.Value);
                 switch (_selectedModeIndex)
                 {
-                    case 0: vm.CustomQuietGpuTripPoint = gpuTrip; break;
-                    case 1: vm.CustomBalancedGpuTripPoint = gpuTrip; break;
-                    case 2: vm.CustomPerfGpuTripPoint = gpuTrip; break;
-                    case 3: vm.CustomTurboGpuTripPoint = gpuTrip; break;
+                    case 0: vm.CustomEcoGpuTripPoint = gpuTrip; break;
+                    case 1: vm.CustomQuietGpuTripPoint = gpuTrip; break;
+                    case 2: vm.CustomBalancedGpuTripPoint = gpuTrip; break;
+                    case 3: vm.CustomPerfGpuTripPoint = gpuTrip; break;
+                    case 4: vm.CustomTurboGpuTripPoint = gpuTrip; break;
                 }
                 vm.GpuThermalTripPointCelsius = gpuTrip;
             }
@@ -328,14 +339,14 @@ namespace PreySense.Frontend.Views
 
         private void SaveButton_Click(object sender, RoutedEventArgs e)
         {
-            if (DataContext is not MainViewModel vm || !vm.IsAcpiTuningAllowed) return;
+            if (DataContext is not MainViewModel vm || !vm.IsAcpiOverrideEnabled) return;
 
             var (pl1, pl2) = ReadClampedLimits(preferPl2: false);
             int tau = (int)Math.Round(SliderTau.Value);
 
             WriteClampedLimitsToEditor(pl1, pl2);
             StoreModeLimits(pl1, pl2);
-            vm.TauSeconds = tau;
+            vm.SetTauForModeIndex(_selectedModeIndex, tau);
 
             int gpuW = ReadGpuWatts();
             if (RowGpuPower != null) RowGpuPower.Value = gpuW;
@@ -346,10 +357,11 @@ namespace PreySense.Frontend.Views
                 int gpuTrip = (int)Math.Round(SliderGpuTripPoint.Value);
                 switch (_selectedModeIndex)
                 {
-                    case 0: vm.CustomQuietGpuTripPoint = gpuTrip; break;
-                    case 1: vm.CustomBalancedGpuTripPoint = gpuTrip; break;
-                    case 2: vm.CustomPerfGpuTripPoint = gpuTrip; break;
-                    case 3: vm.CustomTurboGpuTripPoint = gpuTrip; break;
+                    case 0: vm.CustomEcoGpuTripPoint = gpuTrip; break;
+                    case 1: vm.CustomQuietGpuTripPoint = gpuTrip; break;
+                    case 2: vm.CustomBalancedGpuTripPoint = gpuTrip; break;
+                    case 3: vm.CustomPerfGpuTripPoint = gpuTrip; break;
+                    case 4: vm.CustomTurboGpuTripPoint = gpuTrip; break;
                 }
             }
 

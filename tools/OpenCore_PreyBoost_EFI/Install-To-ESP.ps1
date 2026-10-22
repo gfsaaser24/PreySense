@@ -3,6 +3,7 @@
     Installs PreySense OpenCore on a hidden FAT partition and boots it from UEFI firmware.
 .DESCRIPTION
     Creates a 16 MB EFI System Partition on the Windows disk and copies OpenCore there.
+    An existing PREYSENSE partition is deleted first so the new SSDT is the only copy.
     The volume has no Windows drive letter. Enroll the EFI files in BIOS Secure Boot
     and set PreySense first in BIOS boot order.
 #>
@@ -63,6 +64,39 @@ function Get-WindowsSystemPartition {
     $sys = $env:SystemDrive.TrimEnd('\')
     $letter = $sys.Substring(0, 1)
     Get-Partition -DriveLetter $letter
+}
+
+function Remove-PreySensePartition {
+    param($Partition)
+
+    $windows = Get-WindowsSystemPartition
+    if ($Partition.DiskNumber -eq $windows.DiskNumber -and $Partition.PartitionNumber -eq $windows.PartitionNumber) {
+        throw "Refusing to delete the Windows system partition."
+    }
+
+    if ($Partition.DriveLetter) {
+        Remove-PartitionAccessPath -DriveLetter $Partition.DriveLetter -AccessPath "$($Partition.DriveLetter):\" -ErrorAction SilentlyContinue
+    }
+    foreach ($path in @($Partition.AccessPaths)) {
+        if ($path -and $path -like '?:\') {
+            Remove-PartitionAccessPath -DiskNumber $Partition.DiskNumber -PartitionNumber $Partition.PartitionNumber -AccessPath $path -ErrorAction SilentlyContinue
+        }
+    }
+
+    Write-Host "   Deleting disk $($Partition.DiskNumber) partition $($Partition.PartitionNumber)..." -ForegroundColor Yellow
+    Remove-Partition -DiskNumber $Partition.DiskNumber -PartitionNumber $Partition.PartitionNumber -Confirm:$false
+    Write-Host "   Old partition removed." -ForegroundColor Green
+
+    try {
+        $windows = Get-WindowsSystemPartition
+        $supported = Get-PartitionSupportedSize -DiskNumber $windows.DiskNumber -PartitionNumber $windows.PartitionNumber
+        if ($supported.SizeMax -gt $windows.Size) {
+            Resize-Partition -DiskNumber $windows.DiskNumber -PartitionNumber $windows.PartitionNumber -Size $supported.SizeMax
+            Write-Host "   Returned the old partition space to Windows." -ForegroundColor Green
+        }
+    } catch {
+        Write-Host "   Old partition deleted. Windows could not be expanded automatically: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
 }
 
 function New-PreySensePartition {
@@ -143,17 +177,16 @@ function Update-PreySenseEfiFiles {
 
 $mountLetter = Get-FreeDriveLetter
 $windows = Get-WindowsSystemPartition
-$partition = Get-PreySensePartition
-if ($partition) {
-    Write-Host "`n1. Hidden PREYSENSE partition already exists. Mounting to update files..." -ForegroundColor Yellow
-    $mountLetter = Mount-PreySensePartition -Partition $partition -Letter $mountLetter
-    Write-Host "   Mounted disk $($partition.DiskNumber) partition $($partition.PartitionNumber) as ${mountLetter}:" -ForegroundColor Green
-} else {
-    Write-Host "`n1. Creating 16 MB hidden PreySense partition..." -ForegroundColor Yellow
-    $partition = New-PreySensePartition -DiskNumber $windows.DiskNumber -Letter $mountLetter
-    $mountLetter = if ($partition.DriveLetter) { [string]$partition.DriveLetter } else { Mount-PreySensePartition -Partition $partition -Letter $mountLetter }
-    Write-Host "   Created EFI System partition labeled $partitionLabel (no Windows drive letter)." -ForegroundColor Green
+$existing = Get-PreySensePartition
+if ($existing) {
+    Write-Host "`n1. Removing the existing hidden PREYSENSE partition..." -ForegroundColor Yellow
+    Remove-PreySensePartition -Partition $existing
 }
+
+Write-Host "`nCreating a new 16 MB hidden PreySense partition..." -ForegroundColor Yellow
+$partition = New-PreySensePartition -DiskNumber $windows.DiskNumber -Letter $mountLetter
+$mountLetter = if ($partition.DriveLetter) { [string]$partition.DriveLetter } else { Mount-PreySensePartition -Partition $partition -Letter $mountLetter }
+Write-Host "   Created EFI System partition labeled $partitionLabel (no Windows drive letter)." -ForegroundColor Green
 
 try {
     Write-Host "`n2. Writing OpenCore files to ${mountLetter}:\EFI ..." -ForegroundColor Yellow
@@ -173,3 +206,11 @@ Write-Host "     PREYSENSE -> EFI -> BOOT -> BOOTX64.EFI" -ForegroundColor White
 Write-Host "  3. Repeat: PREYSENSE -> EFI -> OC -> OpenCore.efi" -ForegroundColor White
 Write-Host "  4. Repeat: PREYSENSE -> EFI -> OC -> Drivers -> OpenRuntime.efi" -ForegroundColor White
 Write-Host "  5. Boot -> put PreySense first in the boot order. Save and exit." -ForegroundColor White
+Write-Host ""
+$restart = Read-Host "Restart Windows now? (Y/N)"
+if ($restart -match '^[Yy]') {
+    Write-Host "Restarting..." -ForegroundColor Yellow
+    shutdown.exe /r /t 0 /c "PreySense OpenCore install finished. Restarting."
+} else {
+    Write-Host "Restart skipped. Reboot from Windows when you are ready." -ForegroundColor White
+}

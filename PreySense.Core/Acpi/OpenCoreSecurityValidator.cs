@@ -1,4 +1,5 @@
 using System;
+using System.Management;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
 
@@ -224,5 +225,56 @@ namespace PreySense.Core.Acpi
 
         public static string GetAcpiOverrideLabel(bool isOpenCoreLoaded) =>
             isOpenCoreLoaded ? "OpenCore Active" : "OpenCore Not Loaded";
+
+        /// <summary>
+        /// True when the hidden PREYSENSE partition is on a disk. This is independent
+        /// of whether the current boot actually loaded OpenCore.
+        /// </summary>
+        public static bool IsPreySensePartitionPresent()
+        {
+            if (VolumeLabelExists("PREYSENSE"))
+                return true;
+
+            try
+            {
+                using var searcher = new ManagementObjectSearcher(@"root\Microsoft\Windows\Storage", "SELECT GptType, Size FROM MSFT_Partition");
+                using var partitions = searcher.Get();
+                foreach (ManagementObject partition in partitions)
+                {
+                    string gptType = Convert.ToString(partition["GptType"]) ?? string.Empty;
+                    ulong size = Convert.ToUInt64(partition["Size"] ?? 0UL);
+                    if (gptType.Contains("c0de0001-5052-4559-534e-4f4330310001", StringComparison.OrdinalIgnoreCase))
+                        return true;
+                    if (gptType.Contains("c12a7328-f81f-11d2-ba4b-00a0c93ec93b", StringComparison.OrdinalIgnoreCase)
+                        && size is >= 8UL * 1024 * 1024 and <= 32UL * 1024 * 1024)
+                        return true;
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+
+        private static bool VolumeLabelExists(string label)
+        {
+            try
+            {
+                using var searcher = new ManagementObjectSearcher("SELECT Label FROM Win32_Volume");
+                using var volumes = searcher.Get();
+                foreach (ManagementObject volume in volumes)
+                {
+                    string volumeLabel = Convert.ToString(volume["Label"]) ?? string.Empty;
+                    if (volumeLabel.Equals(label, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
     }
 }

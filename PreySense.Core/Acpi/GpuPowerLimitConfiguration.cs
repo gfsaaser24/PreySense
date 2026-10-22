@@ -24,21 +24,22 @@ namespace PreySense.Core.Acpi
         // Custom / Default Target Limits per Thermal Mode (Watts)
         // With Zero Dynamic Boost: Total Power = Base Power Floor (85W) + Delta
         public int QuietGpuWatts { get; set; } = 85;      // 85W Base + 0W Delta
+        public int EcoGpuWatts { get; set; } = 85;        // Separate Acer M5 profile
         public int BalancedGpuWatts { get; set; } = 100;  // 85W Base + 15W Delta
         public int PerformanceGpuWatts { get; set; } = 115; // 85W Base + 30W Delta
         public int TurboGpuWatts { get; set; } = 130;     // Factory ACPI Turbo default
 
-        // Factory ACPI GPU Thermal Trip Point (WMG3: 0x4F = 79°C)
-        public const int FactoryGpuThermalTripPointCelsius = 79;
-
-        // Standardized Default GPU Thermal Trip Point per mode as in original ACPI (WMG3 = 79°C)
+        // Calibrated PHN16S-71 trip point. Every mode reads 81°C.
+        public const int FactoryGpuThermalTripPointCelsius = 81;
         public int QuietGpuTripPointCelsius { get; set; } = FactoryGpuThermalTripPointCelsius;
+        public int EcoGpuTripPointCelsius { get; set; } = FactoryGpuThermalTripPointCelsius;
         public int BalancedGpuTripPointCelsius { get; set; } = FactoryGpuThermalTripPointCelsius;
         public int PerformanceGpuTripPointCelsius { get; set; } = FactoryGpuThermalTripPointCelsius;
         public int TurboGpuTripPointCelsius { get; set; } = FactoryGpuThermalTripPointCelsius;
 
         // Power Limit Deltas (Target - Base) with Zero Dynamic Boost
         public int QuietDeltaWatts => Math.Max(0, QuietGpuWatts - BasePowerWatts);
+        public int EcoDeltaWatts => Math.Max(0, EcoGpuWatts - BasePowerWatts);
         public int BalancedDeltaWatts => Math.Max(0, BalancedGpuWatts - BasePowerWatts);
         public int PerformanceDeltaWatts => Math.Max(0, PerformanceGpuWatts - BasePowerWatts);
         public int TurboDeltaWatts => Math.Max(0, TurboGpuWatts - BasePowerWatts);
@@ -70,6 +71,7 @@ namespace PreySense.Core.Acpi
                 config.AcpiTurboDefaultWatts = 130;
                 config.BasePowerWatts = baseW;
                 config.QuietGpuWatts = baseW; // 85W
+                config.EcoGpuWatts = baseW; // live capture replaces this when launched in Eco
                 config.BalancedGpuWatts = 100;
                 config.PerformanceGpuWatts = 115;
                 config.TurboGpuWatts = 130; // Factory ACPI Turbo default
@@ -79,6 +81,7 @@ namespace PreySense.Core.Acpi
             {
                 // Use the verified ACPI profile defaults when ERM4 cannot be identified.
                 config.QuietGpuWatts = baseW;
+                config.EcoGpuWatts = baseW;
                 config.BalancedGpuWatts = 100;
                 config.PerformanceGpuWatts = 115;
                 config.TurboGpuWatts = 130;
@@ -109,6 +112,11 @@ namespace PreySense.Core.Acpi
             if (QuietGpuWatts < MinPowerWatts)
             {
                 errorMessage = $"Quiet GPU wattage must be at least {MinPowerWatts}W.";
+                return false;
+            }
+            if (EcoGpuWatts < MinPowerWatts)
+            {
+                errorMessage = $"Eco GPU wattage must be at least {MinPowerWatts}W.";
                 return false;
             }
             if (BalancedGpuWatts < QuietGpuWatts)

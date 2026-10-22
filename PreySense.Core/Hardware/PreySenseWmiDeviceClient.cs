@@ -6,7 +6,7 @@ namespace PreySense.Core.Hardware
     public class PreySenseWmiDeviceClient
     {
         public const string WmiNamespace = @"root\WMI";
-        public const string TargetGuid = "D73644F9-51A6-43DE-87BC-9D1B0BE8C931";
+        public const string TargetGuid = "09750C8E-7D05-406A-A517-E3EE0DDB63FF";
         public const string WmiClassName = "PreySenseControl";
 
         public readonly record struct PowerSnapshot(

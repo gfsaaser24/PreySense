@@ -158,6 +158,7 @@ namespace PreySense.Frontend.ViewModels
                 0x05 => CustomTurboPl1,
                 0x04 => CustomPerfPl1,
                 0x01 => CustomBalancedPl1,
+                0x06 => CustomEcoPl1,
                 _ => CustomQuietPl1
             };
             int startupPl2 = ActivePowerMode switch
@@ -165,10 +166,12 @@ namespace PreySense.Frontend.ViewModels
                 0x05 => CustomTurboPl2,
                 0x04 => CustomPerfPl2,
                 0x01 => CustomBalancedPl2,
+                0x06 => CustomEcoPl2,
                 _ => CustomQuietPl2
             };
             Pl1Watts = startupPl1;
             Pl2Watts = startupPl2;
+            TauSeconds = TauForMode(ActivePowerMode);
 
             _ = InitializeSessionAsync();
         }
@@ -253,6 +256,7 @@ namespace PreySense.Frontend.ViewModels
             App.Current?.Dispatcher?.InvokeAsync(() =>
             {
                 if (_disposed) return;
+                if (IsFactoryCalibrationRunning) return;
                 // PreySense owns the chassis Mode / Turbo key. Ignore OEM firmware
                 // echoes while a local cycle is pending or just queued.
                 if (IsModeSelectionPending()

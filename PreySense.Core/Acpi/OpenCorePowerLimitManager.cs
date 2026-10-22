@@ -79,6 +79,13 @@ namespace PreySense.Core.Acpi
         /// </summary>
         public static int DetectIntelPlatformPowerLimitWatts()
         {
+            return TryDetectIntelPlatformPowerLimitWatts(out int watts)
+                ? watts
+                : FactoryIntelPlatformLimitWatts;
+        }
+
+        public static bool TryDetectIntelPlatformPowerLimitWatts(out int watts)
+        {
             try
             {
                 using RegistryKey? ssdtKey = Registry.LocalMachine.OpenSubKey(@"HARDWARE\ACPI\SSDT");
@@ -86,7 +93,8 @@ namespace PreySense.Core.Acpi
                 if (registryValue is > 0)
                 {
                     AppLogger.Log($"[OpenCorePowerLimitManager] Detected Intel platform limit {registryValue}W from the Windows ACPI cache.");
-                    return registryValue.Value;
+                    watts = registryValue.Value;
+                    return true;
                 }
             }
             catch (Exception ex)
@@ -99,11 +107,13 @@ namespace PreySense.Core.Acpi
             if (firmwareValue is > 0)
             {
                 AppLogger.Log($"[OpenCorePowerLimitManager] Detected Intel platform limit {firmwareValue}W from the live SSDT.");
-                return firmwareValue.Value;
+                watts = firmwareValue.Value;
+                return true;
             }
 
             AppLogger.Log($"[OpenCorePowerLimitManager] Intel platform limit was not queryable; using verified factory fallback {FactoryIntelPlatformLimitWatts}W.");
-            return FactoryIntelPlatformLimitWatts;
+            watts = FactoryIntelPlatformLimitWatts;
+            return false;
         }
 
         private static int? FindIntelPlatformLimitInRegistry(RegistryKey? key)
@@ -330,24 +340,31 @@ namespace PreySense.Core.Acpi
             return plist;
         }
 
-        public static string BuildOpenCorePcccPatchXml(int ceilingWatts = FactoryIntelPlatformLimitWatts)
+        public const string PcccStoreFindBase64 = "cAwITAEAiIOIUENDWAEAAQA=";
+
+        /// <summary>
+        /// Replaces the OEM 85,000 mW PCCC literal with 999,000 mW.
+        /// The advertised ceiling is fixed; mode PL1 is still written at runtime.
+        /// </summary>
+        public static string PcccStoreReplaceBase64 { get; } = BuildPcccStoreReplaceBase64();
+
+        private static string BuildPcccStoreReplaceBase64()
         {
-            ceilingWatts = Math.Clamp(ceilingWatts, FactoryIntelPlatformLimitWatts, CpuPowerLimitConfiguration.MaxPowerLimitWatts);
-            long ceilingMilliwatts = (long)ceilingWatts * 1000;
-            if (ceilingMilliwatts > uint.MaxValue)
-            {
-                throw new ArgumentOutOfRangeException(nameof(ceilingWatts), "The ACPI PCCC field cannot represent this wattage in 32-bit milliwatts.");
-            }
-            byte[] replacement = Convert.FromBase64String("cAwITAEAiIOIUENDWAEAAQA=");
-            Buffer.BlockCopy(BitConverter.GetBytes((uint)ceilingMilliwatts), 0, replacement, 2, 4);
-            string replacementBase64 = Convert.ToBase64String(replacement);
+            byte[] replacement = Convert.FromBase64String(PcccStoreFindBase64);
+            Buffer.BlockCopy(BitConverter.GetBytes(CpuPowerLimitConfiguration.MaxPowerLimitWatts * 1000), 0, replacement, 2, 4);
+            return Convert.ToBase64String(replacement);
+        }
+
+        public static string BuildOpenCorePcccPatchXml(int ceilingWatts = CpuPowerLimitConfiguration.MaxPowerLimitWatts)
+        {
+            _ = ceilingWatts;
             return $@"			<dict>
 				<key>Base</key><string></string><key>BaseSkip</key><integer>0</integer>
-				<key>Comment</key><string>PreySense: Set Intel IPF PCCC PL1 Limit (85W to {ceilingWatts}W)</string>
+				<key>Comment</key><string>PreySense: Set Intel IPF PCCC PL1 Limit (85W to {CpuPowerLimitConfiguration.MaxPowerLimitWatts}W)</string>
 				<key>Count</key><integer>1</integer><key>Enabled</key><true/>
-				<key>Find</key><data>cAwITAEAiIOIUENDWAEAAQA=</data><key>Limit</key><integer>0</integer>
+				<key>Find</key><data>{PcccStoreFindBase64}</data><key>Limit</key><integer>0</integer>
 				<key>Mask</key><data></data><key>OemTableId</key><data>QUNSUFJEQ1Q=</data>
-				<key>Replace</key><data>{replacementBase64}</data><key>ReplaceMask</key><data></data>
+				<key>Replace</key><data>{PcccStoreReplaceBase64}</data><key>ReplaceMask</key><data></data>
 				<key>Skip</key><integer>0</integer><key>TableLength</key><integer>20131</integer>
 				<key>TableSignature</key><data>U1NEVA==</data>
 			</dict>";
@@ -491,6 +508,8 @@ $@"<dict>
             // MCHBAR raw values: 1W = 8 units
             int qPl1Raw = config.QuietPl1 * 8;
             int qPl2Raw = config.QuietPl2 * 8;
+            int ePl1Raw = config.EcoPl1 * 8;
+            int ePl2Raw = config.EcoPl2 * 8;
             int bPl1Raw = config.BalancedPl1 * 8;
             int bPl2Raw = config.BalancedPl2 * 8;
             int pPl1Raw = config.PerformancePl1 * 8;
@@ -573,11 +592,11 @@ $@"<dict>
             sb.AppendLine("                }");
             sb.AppendLine("                Case (0x03) // Quiet Mode");
             sb.AppendLine("                {");
-            sb.AppendLine($"                    \\_SB.PPRW (0x{qPl1Raw:X4}, 0x{qPl2Raw:X4})");
+                sb.AppendLine($"                    \\_SB.PPRW (0x{qPl1Raw:X4}, 0x{qPl2Raw:X4})");
             sb.AppendLine("                }");
             sb.AppendLine("                Case (0x04) // Eco Mode");
             sb.AppendLine("                {");
-            sb.AppendLine($"                    \\_SB.PPRW (0x{qPl1Raw:X4}, 0x{qPl2Raw:X4})");
+            sb.AppendLine($"                    \\_SB.PPRW (0x{ePl1Raw:X4}, 0x{ePl2Raw:X4})");
             sb.AppendLine("                }");
             sb.AppendLine("            }");
             sb.AppendLine("        }");
@@ -714,7 +733,7 @@ $@"<dict>
             sb.AppendLine();
             sb.AppendLine("                /* Dynamic GPU profiles with NVPCF headroom */");
             sb.AppendLine("                M1DB = 0x00 // Zero Dynamic Boost");
-            sb.AppendLine($"                M1CT = 0x{gpuConfig.QuietDeltaWatts:X2} // {gpuConfig.QuietDeltaWatts}W Delta ({gpuConfig.QuietGpuWatts}W)");
+                sb.AppendLine($"                M1CT = 0x{gpuConfig.QuietDeltaWatts:X2} // {gpuConfig.QuietDeltaWatts}W Delta ({gpuConfig.QuietGpuWatts}W)");
             sb.AppendLine("                M1CP = 0x19 // 25W Platform Headroom");
             sb.AppendLine();
             sb.AppendLine("                M2DB = 0x0F // 15W Dynamic Boost");
@@ -727,7 +746,10 @@ $@"<dict>
             sb.AppendLine();
             sb.AppendLine("                M4DB = 0x0F // 15W Dynamic Boost (required by NVIDIA driver for upper tier)");
             sb.AppendLine($"                M4CT = 0x{Math.Max(0, gpuConfig.TurboDeltaWatts - 15):X2} // {Math.Max(0, gpuConfig.TurboDeltaWatts - 15)}W Configurable TGP Delta");
-            sb.AppendLine($"                M4CP = 0x{Math.Max(0x23, gpuConfig.TurboDeltaWatts):X2} // Combined Platform Cap");
+                sb.AppendLine($"                M4CP = 0x{Math.Max(0x23, gpuConfig.TurboDeltaWatts):X2} // Combined Platform Cap");
+                sb.AppendLine();
+                sb.AppendLine("                /* Eco is Acer's independent M5 profile, not Quiet/M1 */");
+                sb.AppendLine($"                M5CT = 0x{gpuConfig.EcoDeltaWatts:X2} // {gpuConfig.EcoDeltaWatts}W Delta ({gpuConfig.EcoGpuWatts}W)");
             sb.AppendLine();
             sb.AppendLine("                If (CondRefOf (\\_SB.NPCF.ACBT))");
             sb.AppendLine("                {");

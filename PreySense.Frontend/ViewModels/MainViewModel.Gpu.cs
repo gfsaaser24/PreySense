@@ -20,11 +20,13 @@ namespace PreySense.Frontend.ViewModels
         [ObservableProperty] private int _gpuPowerTargetMax = GpuPowerLimitConfiguration.MaximumPowerLimitWatts;
         [ObservableProperty] private int _gpuBasePowerWatts = 85;
         [ObservableProperty] private int _customQuietGpuWatts = 85;
+        [ObservableProperty] private int _customEcoGpuWatts = 85;
         [ObservableProperty] private int _customBalancedGpuWatts = 115;
         [ObservableProperty] private int _customPerfGpuWatts = 125;
         [ObservableProperty] private int _customTurboGpuWatts = 130;
         [ObservableProperty] private int _gpuThermalTripPointCelsius = GpuPowerLimitConfiguration.FactoryGpuThermalTripPointCelsius; // 79°C ACPI default (WMG3)
         [ObservableProperty] private int _customQuietGpuTripPoint = GpuPowerLimitConfiguration.FactoryGpuThermalTripPointCelsius; // 79°C
+        [ObservableProperty] private int _customEcoGpuTripPoint = GpuPowerLimitConfiguration.FactoryGpuThermalTripPointCelsius;
         [ObservableProperty] private int _customBalancedGpuTripPoint = GpuPowerLimitConfiguration.FactoryGpuThermalTripPointCelsius; // 79°C
         [ObservableProperty] private int _customPerfGpuTripPoint = GpuPowerLimitConfiguration.FactoryGpuThermalTripPointCelsius; // 79°C
         [ObservableProperty] private int _customTurboGpuTripPoint = GpuPowerLimitConfiguration.FactoryGpuThermalTripPointCelsius; // 79°C
@@ -397,10 +399,12 @@ namespace PreySense.Frontend.ViewModels
                 if (key != null)
                 {
                     key.SetValue("QuietGpuWatts", CustomQuietGpuWatts);
+                    key.SetValue("EcoGpuWatts", CustomEcoGpuWatts);
                     key.SetValue("BalancedGpuWatts", CustomBalancedGpuWatts);
                     key.SetValue("PerfGpuWatts", CustomPerfGpuWatts);
                     key.SetValue("TurboGpuWatts", CustomTurboGpuWatts);
                     key.SetValue("QuietGpuTripPoint", CustomQuietGpuTripPoint);
+                    key.SetValue("EcoGpuTripPoint", CustomEcoGpuTripPoint);
                     key.SetValue("BalancedGpuTripPoint", CustomBalancedGpuTripPoint);
                     key.SetValue("PerfGpuTripPoint", CustomPerfGpuTripPoint);
                     key.SetValue("TurboGpuTripPoint", CustomTurboGpuTripPoint);

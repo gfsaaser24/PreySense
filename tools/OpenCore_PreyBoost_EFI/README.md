@@ -7,7 +7,7 @@ It loads before Windows. It does not flash the BIOS, load unsigned Windows drive
 ## What it does
 
 - Injects **one** SSDT: `SSDT-PREYDEV.aml` — isolated `PNP0C14` WMI device (`PreySenseControl`). No boot-time `_INI` power writes.
-- Patches Intel **PCCC** so IPF’s advertised PL1 ceiling can be raised from 85 W.
+- Patches Intel **PCCC** so IPF’s advertised PL1 ceiling is 999 W.
 - Patches SSDO **E3DT** `0x0E` → `0x0D` (GPU-to-CPU cross-throttle).
 - Leaves OEM `_Q30`, `WMBH`, fans, and profile tables in place.
 
@@ -26,7 +26,7 @@ tools/OpenCore_PreyBoost_EFI/
 │       └── config.plist
 ├── Prepare-USB.ps1          USB copy (FAT32)
 ├── Install-To-ESP.ps1       Hidden PREYSENSE partition
-└── Uninstall-From-ESP.ps1   Remove partition and leftover OC on Windows ESP
+└── Uninstall-From-ESP.ps1   Remove the dedicated PreySense partition
 ```
 
 The same tree is embedded in PreySense.exe. Settings → ACPI Override runs these scripts from a staging folder under `%LocalAppData%\PreySense\OpenCoreStaging\`.
@@ -67,7 +67,7 @@ Acer firmware puts Windows Boot Manager first on every reboot unless BIOS order 
 powershell -ExecutionPolicy Bypass -File Uninstall-From-ESP.ps1
 ```
 
-Deletes leftover PreySense/PreyBoost BCD identifiers if any, removes `EFI\OC` from the Windows ESP if a previous install put it there, deletes the `PREYSENSE` partition, and expands Windows. Set BIOS boot order back to Windows Boot Manager.
+Deletes the `PREYSENSE` partition and expands Windows. Set BIOS boot order back to Windows Boot Manager.
 
 ## After install
 

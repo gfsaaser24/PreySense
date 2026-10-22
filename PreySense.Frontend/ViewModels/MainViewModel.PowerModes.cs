@@ -140,6 +140,7 @@ namespace PreySense.Frontend.ViewModels
                 0x05 => CustomTurboPl1,
                 0x04 => CustomPerfPl1,
                 0x01 => CustomBalancedPl1,
+                0x06 => CustomEcoPl1,
                 _ => CustomQuietPl1
             });
             int modePl2 = LimitPl2(modePl1, mode switch
@@ -147,6 +148,7 @@ namespace PreySense.Frontend.ViewModels
                 0x05 => CustomTurboPl2,
                 0x04 => CustomPerfPl2,
                 0x01 => CustomBalancedPl2,
+                0x06 => CustomEcoPl2,
                 _ => CustomQuietPl2
             });
             int modeGpu = mode switch
@@ -154,6 +156,7 @@ namespace PreySense.Frontend.ViewModels
                 0x05 => CustomTurboGpuWatts,
                 0x04 => CustomPerfGpuWatts,
                 0x01 => CustomBalancedGpuWatts,
+                0x06 => CustomEcoGpuWatts,
                 _ => CustomQuietGpuWatts
             };
             int modeTrip = mode switch
@@ -161,10 +164,12 @@ namespace PreySense.Frontend.ViewModels
                 0x05 => CustomTurboGpuTripPoint,
                 0x04 => CustomPerfGpuTripPoint,
                 0x01 => CustomBalancedGpuTripPoint,
+                0x06 => CustomEcoGpuTripPoint,
                 _ => CustomQuietGpuTripPoint
             };
             Pl1Watts = modePl1;
             Pl2Watts = modePl2;
+            TauSeconds = TauForMode(mode);
             GpuPowerTargetWatts = modeGpu;
             GpuThermalTripPointCelsius = modeTrip;
             ActiveGpuPowerCeiling = $"GPU Power Ceiling: {GpuPowerTargetWatts}W (ACPI Max: {GpuPowerTargetMax}W, Trip: {GpuThermalTripPointCelsius}°C)";

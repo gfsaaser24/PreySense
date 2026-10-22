@@ -15,7 +15,7 @@ namespace PreySense.Frontend.ViewModels
     public partial class MainViewModel
     {
         public ObservableCollection<GameProfile> GameProfiles { get; } = new();
-        public string[] GameModeNames { get; } = { "Quiet", "Balanced", "Performance", "Turbo" };
+        public string[] GameModeNames { get; } = { "Eco", "Quiet", "Balanced", "Performance", "Turbo" };
         public bool HasSelectedGameProfile => SelectedGameProfile != null;
 
         [ObservableProperty] private GameProfile? _selectedGameProfile;
@@ -115,6 +115,7 @@ namespace PreySense.Frontend.ViewModels
             SelectedGameProfile.PowerMode = value switch
             {
                 "Quiet" => 0x00,
+                "Eco" => 0x06,
                 "Performance" => 0x04,
                 "Turbo" => 0x05,
                 _ => (byte)0x01
@@ -125,7 +126,7 @@ namespace PreySense.Frontend.ViewModels
         [RelayCommand]
         public void AddGameProfile()
         {
-            if (!IsAcpiTuningAllowed)
+            if (!IsAcpiOverrideEnabled)
                 return;
 
             App.SuppressAutoHide = true;
@@ -174,7 +175,7 @@ namespace PreySense.Frontend.ViewModels
         [RelayCommand]
         public void RemoveSelectedGameProfile()
         {
-            if (!IsAcpiTuningAllowed || SelectedGameProfile == null)
+            if (!IsAcpiOverrideEnabled || SelectedGameProfile == null)
                 return;
             GameProfiles.Remove(SelectedGameProfile);
             SelectedGameProfile = GameProfiles.FirstOrDefault();
@@ -185,7 +186,7 @@ namespace PreySense.Frontend.ViewModels
 
         internal async Task ApplyGameProfileAsync(GameProfile game)
         {
-            if (!IsAcpiTuningAllowed)
+            if (!IsAcpiOverrideEnabled)
                 return;
 
             int pl1 = LimitPl1ToPlatform(game.CpuPl1);
@@ -230,7 +231,7 @@ namespace PreySense.Frontend.ViewModels
         {
             return _dispatcher.InvokeAsync(async () =>
             {
-                if (_disposed || !IsAcpiTuningAllowed) return;
+                if (_disposed || !IsAcpiOverrideEnabled) return;
                 if (_appliedGameExe == null)
                     _modeBeforeGame = PeekPendingOrActiveMode();
                 _appliedGameExe = game.ExeName;
@@ -247,7 +248,7 @@ namespace PreySense.Frontend.ViewModels
                 byte restore = _modeBeforeGame;
                 _appliedGameExe = null;
                 _modeBeforeGame = 0xFF;
-                if (applied == null || restore == 0xFF || !IsAcpiTuningAllowed)
+                if (applied == null || restore == 0xFF || !IsAcpiOverrideEnabled)
                     return;
                 await SetModeAsync(restore);
                 StatusMessage = $"{Path.GetFileNameWithoutExtension(applied)} closed. Restored {GetModeTitle(restore)}.";

@@ -116,8 +116,8 @@ namespace PreySense.Frontend.ViewModels
 
             int batteryLimit = IsBatteryLimitEnabled ? 1 : 0;
             int usbLevel = UsbChargingPercent;
-            int platformLimit = OpenCorePowerLimitManager.FactoryIntelPlatformLimitWatts;
             bool openCore = false;
+            bool partitionPresent = false;
 
             await Task.Run(() =>
             {
@@ -128,8 +128,8 @@ namespace PreySense.Frontend.ViewModels
                         usbLevel = _hw.GetUsbChargingLevel();
                 }
                 catch { }
-                try { platformLimit = OpenCorePowerLimitManager.DetectIntelPlatformPowerLimitWatts(); } catch { }
                 try { openCore = OpenCoreSecurityValidator.DetectIsOpenCoreLoaded(); } catch { }
+                try { partitionPresent = OpenCoreSecurityValidator.IsPreySensePartitionPresent(); } catch { }
             });
 
             if (_disposed)
@@ -143,11 +143,10 @@ namespace PreySense.Frontend.ViewModels
                 IsBatteryLimitEnabled = batteryLimit == 1;
                 if (UsbChargingPercent == 0 && usbLevel is 10 or 20 or 30)
                     UsbChargingPercent = usbLevel;
-                IntelPlatformPowerLimitMinimumWatts = platformLimit;
-                if (PcccCeilingWatts < platformLimit)
-                    PcccCeilingWatts = platformLimit;
-                ClampCpuPl1ToPlatformLimit();
                 IsOpenCoreLoaded = openCore;
+                IsOpenCorePartitionPresent = partitionPresent;
+                if (!openCore)
+                    IsAcpiOverrideEnabled = false;
                 AcpiOverrideStatus = OpenCoreSecurityValidator.GetAcpiOverrideLabel(openCore);
             });
         }
@@ -234,6 +233,7 @@ namespace PreySense.Frontend.ViewModels
                 0x05 => CustomTurboPl1,
                 0x04 => CustomPerfPl1,
                 0x01 => CustomBalancedPl1,
+                0x06 => CustomEcoPl1,
                 _ => CustomQuietPl1
             };
             int pl2 = mode switch
@@ -241,6 +241,7 @@ namespace PreySense.Frontend.ViewModels
                 0x05 => CustomTurboPl2,
                 0x04 => CustomPerfPl2,
                 0x01 => CustomBalancedPl2,
+                0x06 => CustomEcoPl2,
                 _ => CustomQuietPl2
             };
             int gpuWatts = mode switch
@@ -248,6 +249,7 @@ namespace PreySense.Frontend.ViewModels
                 0x05 => CustomTurboGpuWatts,
                 0x04 => CustomPerfGpuWatts,
                 0x01 => CustomBalancedGpuWatts,
+                0x06 => CustomEcoGpuWatts,
                 _ => CustomQuietGpuWatts
             };
             int gpuTrip = mode switch
@@ -255,10 +257,12 @@ namespace PreySense.Frontend.ViewModels
                 0x05 => CustomTurboGpuTripPoint,
                 0x04 => CustomPerfGpuTripPoint,
                 0x01 => CustomBalancedGpuTripPoint,
+                0x06 => CustomEcoGpuTripPoint,
                 _ => CustomQuietGpuTripPoint
             };
 
             int limitedPl1 = LimitPl1ToPlatform(pl1);
+            TauSeconds = TauForMode(mode);
             PowerLimitController.SetCpuPowerLimits(limitedPl1, LimitPl2(limitedPl1, pl2), true, TauSeconds);
             PowerLimitController.SetCpuBoost(CpuBoostMode);
             PreySense.Core.Hardware.PreySenseWmiDeviceClient.SetGpuPowerLimit((uint)gpuWatts);

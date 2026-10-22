@@ -1,3 +1,5 @@
+using PreySense.Core.Acpi;
+
 namespace PreySense.Mode
 {
     /// <summary>
@@ -28,43 +30,53 @@ namespace PreySense.Mode
         {
             var profile = mode switch
             {
-                0x00 or 0x06 => new PerformanceProfile // Quiet / Eco
+                0x00 => new PerformanceProfile
                 {
                     PowerMode = mode,
-                    Name = mode == 0x06 ? "Eco" : "Quiet",
-                    CpuPl1 = 45,
-                    CpuPl2 = 140,
-                    TauSeconds = 56,
+                    Name = "Quiet",
+                    CpuPl1 = CpuPowerLimitConfiguration.FactoryQuietPl1,
+                    CpuPl2 = CpuPowerLimitConfiguration.FactoryQuietPl2,
+                    TauSeconds = CpuPowerLimitConfiguration.FactoryTauSeconds,
                     CpuBoost = 1,
                     ApplyCpuLimits = false, ApplyGpuLimits = false, ApplyFanCurve = false
                 },
-                0x04 => new PerformanceProfile // Performance
+                0x06 => new PerformanceProfile
+                {
+                    PowerMode = mode,
+                    Name = "Eco",
+                    CpuPl1 = CpuPowerLimitConfiguration.FactoryEcoPl1,
+                    CpuPl2 = CpuPowerLimitConfiguration.FactoryEcoPl2,
+                    TauSeconds = CpuPowerLimitConfiguration.FactoryTauSeconds,
+                    CpuBoost = 1,
+                    ApplyCpuLimits = false, ApplyGpuLimits = false, ApplyFanCurve = false
+                },
+                0x04 => new PerformanceProfile
                 {
                     PowerMode = mode,
                     Name = "Performance",
-                    CpuPl1 = 75,
-                    CpuPl2 = 140,
-                    TauSeconds = 56,
+                    CpuPl1 = CpuPowerLimitConfiguration.FactoryPerformancePl1,
+                    CpuPl2 = CpuPowerLimitConfiguration.FactoryPerformancePl2,
+                    TauSeconds = CpuPowerLimitConfiguration.FactoryTauSeconds,
                     CpuBoost = 1,
                     ApplyCpuLimits = false, ApplyGpuLimits = false, ApplyFanCurve = false
                 },
-                0x05 => new PerformanceProfile // Turbo
+                0x05 => new PerformanceProfile
                 {
                     PowerMode = mode,
                     Name = "Turbo",
-                    CpuPl1 = 85,
-                    CpuPl2 = 140,
-                    TauSeconds = 56,
+                    CpuPl1 = CpuPowerLimitConfiguration.FactoryTurboPl1,
+                    CpuPl2 = CpuPowerLimitConfiguration.FactoryTurboPl2,
+                    TauSeconds = CpuPowerLimitConfiguration.FactoryTauSeconds,
                     CpuBoost = 1,
                     ApplyCpuLimits = false, ApplyGpuLimits = false, ApplyFanCurve = false
                 },
-                _ => new PerformanceProfile // Balanced (default)
+                _ => new PerformanceProfile
                 {
                     PowerMode = mode,
                     Name = "Balanced",
-                    CpuPl1 = 65,
-                    CpuPl2 = 140,
-                    TauSeconds = 56,
+                    CpuPl1 = CpuPowerLimitConfiguration.FactoryBalancedPl1,
+                    CpuPl2 = CpuPowerLimitConfiguration.FactoryBalancedPl2,
+                    TauSeconds = CpuPowerLimitConfiguration.FactoryTauSeconds,
                     CpuBoost = 1,
                     ApplyCpuLimits = false, ApplyGpuLimits = false, ApplyFanCurve = false
                 }

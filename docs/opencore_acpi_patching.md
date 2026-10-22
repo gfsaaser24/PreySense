@@ -9,7 +9,7 @@ OpenCore 1.0.8 loads before Windows, injects one SSDT, and applies two binary pa
 | Item | Role |
 | :--- | :--- |
 | `SSDT-PREYDEV.aml` | Isolated `PNP0C14` device `\_SB.PRYW` (UID `PREY`) registering `PreySenseControl` in `root\WMI` |
-| PCCC patch | Raises Intel IPF advertised PL1 ceiling to Settings **PL1 Platform Power Limit** |
+| PCCC patch | Raises Intel IPF advertised PL1 ceiling from 85 W to 999 W |
 | SSDO `E3DT` patch | `E3DT(0x0E)` → `E3DT(0x0D)` — GPU-to-CPU cross-throttle suppression |
 
 OEM `_Q30` and `WMBH` are not renamed. The physical Turbo key still goes through Acer firmware; PreySense only listens.
@@ -46,8 +46,8 @@ powershell -ExecutionPolicy Bypass -File tools\OpenCore_PreyBoost_EFI\Install-To
 
 Admin required. Behavior:
 
-1. If a volume labeled `PREYSENSE` already exists (or a leftover 8–32 MB EFI/legacy PreySense GPT partition), mount it, copy EFI files, dismount. Windows is not shrunk again.
-2. Otherwise shrink the **Windows** partition by **16 MB**, create a GPT **EFI System** partition, format **FAT**, label `PREYSENSE`, set **no default drive letter**.
+1. If a volume labeled `PREYSENSE` already exists (or a leftover 8–32 MB EFI/legacy PreySense GPT partition), delete it and return that space to Windows.
+2. Shrink the **Windows** partition by **16 MB**, create a new GPT **EFI System** partition, format **FAT**, label `PREYSENSE`, set **no default drive letter**.
 3. Copy `EFI\BOOT\BOOTX64.EFI`, `EFI\OC\OpenCore.efi`, `EFI\OC\Drivers\OpenRuntime.efi`, `EFI\OC\ACPI\SSDT-PREYDEV.aml`, `config.plist`.
 
 No `bcdedit /create`. Acer’s `A01ModifyBootInfoDxe` resets Windows Boot Manager to first unless **BIOS boot order** is set.
@@ -73,7 +73,7 @@ Settings → Install to USB, or `Prepare-USB.ps1`. FAT32 stick, F12 → USB. Unp
 
 ## Uninstall
 
-Settings → Uninstall, or `Uninstall-From-ESP.ps1`. Removes leftover PreySense/PreyBoost BCD identifiers if any (legacy), deletes `EFI\OC` on the Windows ESP if a previous experiment put it there, deletes the `PREYSENSE` partition, expands Windows.
+Settings → Uninstall, or `Uninstall-From-ESP.ps1`. Deletes the dedicated `PREYSENSE` partition and expands Windows.
 
 Then set BIOS boot order back to Windows Boot Manager. Re-enroll is unnecessary after the partition is gone.
 
