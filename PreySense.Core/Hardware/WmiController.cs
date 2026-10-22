@@ -197,24 +197,17 @@ namespace PreySense.Helpers
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool GetSystemPowerStatus(out SYSTEM_POWER_STATUS lpSystemPowerStatus);
 
-        public bool TryGetAcConnected(out bool onAc)
+        public bool TryGetPowerStatus(out bool onAc, out float batteryPercent)
         {
             if (GetSystemPowerStatus(out var status))
             {
                 onAc = status.ACLineStatus == 1;
+                batteryPercent = status.BatteryLifePercent == 255 ? 80f : status.BatteryLifePercent;
                 return true;
             }
-            onAc = true; // Fallback assume AC connected
+            onAc = true;
+            batteryPercent = 80f;
             return false;
-        }
-
-        public float GetBatteryPercent()
-        {
-            if (GetSystemPowerStatus(out var status) && status.BatteryLifePercent != 255)
-            {
-                return status.BatteryLifePercent;
-            }
-            return 80f;
         }
 
         public void SetRgbMode(int mode, byte r, byte g, byte b, byte brightness, byte speed, byte direction)
@@ -470,50 +463,6 @@ namespace PreySense.Helpers
 
             var (success, _) = SendCommand(AcerWmi.GamingMethods.SetFanBehavior, value);
             return success;
-        }
-
-        public int GetCpuFanSpeed()
-        {
-            lock (_lock)
-            {
-                try
-                {
-                    var obj = GetWmiObject();
-                    if (obj == null) return 0;
-                    using var inParams = obj.GetMethodParameters(AcerWmi.GamingMethods.GetFanSpeed);
-                    inParams["gmInput"] = 1ul;
-                    using var outParams = obj.InvokeMethod(AcerWmi.GamingMethods.GetFanSpeed, inParams, null);
-                    ulong result = Convert.ToUInt64(outParams["gmOutput"]);
-                    return (int)(result / 256);
-                }
-                catch
-                {
-                    InvalidateCache();
-                    return 0;
-                }
-            }
-        }
-
-        public int GetGpuFanSpeed()
-        {
-            lock (_lock)
-            {
-                try
-                {
-                    var obj = GetWmiObject();
-                    if (obj == null) return 0;
-                    using var inParams = obj.GetMethodParameters(AcerWmi.GamingMethods.GetFanSpeed);
-                    inParams["gmInput"] = 4ul;
-                    using var outParams = obj.InvokeMethod(AcerWmi.GamingMethods.GetFanSpeed, inParams, null);
-                    ulong result = Convert.ToUInt64(outParams["gmOutput"]);
-                    return (int)(result / 256);
-                }
-                catch
-                {
-                    InvalidateCache();
-                    return 0;
-                }
-            }
         }
 
         public static int ScalePercentToWmi(int percent)

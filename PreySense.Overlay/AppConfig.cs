@@ -40,11 +40,6 @@ namespace PreySense.Overlay
             return Get(name) == 1;
         }
 
-        public static bool IsNotFalse(string name)
-        {
-            return Get(name) != 0;
-        }
-
         public static string GetString(string name, string empty = "")
         {
             try

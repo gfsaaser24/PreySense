@@ -91,6 +91,202 @@ namespace PreySense.Core.Acpi
             catch { }
         }
 
+        public enum OpenCoreIntegrationState
+        {
+            NotLoaded,
+            Active,
+            RestartRequired,
+            UpdateRequired
+        }
+
+        /// <summary>
+        /// Reads the OEM revision from a PREYDEV SSDT image.
+        /// </summary>
+        public static bool TryReadPreyDevOemRevision(ReadOnlySpan<byte> table, out uint oemRevision)
+        {
+            oemRevision = 0;
+            if (table.Length < 28)
+                return false;
+            if (table[0] != (byte)'S' || table[1] != (byte)'S' || table[2] != (byte)'D' || table[3] != (byte)'T')
+                return false;
+
+            string oemId = System.Text.Encoding.ASCII.GetString(table.Slice(10, 6));
+            string oemTableId = System.Text.Encoding.ASCII.GetString(table.Slice(16, 8));
+            if (!oemId.StartsWith("PREY", StringComparison.OrdinalIgnoreCase) ||
+                !oemTableId.StartsWith("PREYDEV", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            oemRevision = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(table.Slice(24, 4));
+            return true;
+        }
+
+        /// <summary>
+        /// Reads the OEM revision of the PREYDEV SSDT loaded for this boot.
+        /// The firmware-table API returns only the first SSDT when many share that
+        /// signature, so the per-boot ACPI registry is checked as well.
+        /// </summary>
+        public static bool TryGetPreyDevOemRevision(out uint oemRevision)
+        {
+            if (TryGetPreyDevOemRevisionFromFirmware(out oemRevision))
+                return true;
+            return TryGetPreyDevOemRevisionFromRegistry(out oemRevision);
+        }
+
+        private static bool TryGetPreyDevOemRevisionFromFirmware(out uint oemRevision)
+        {
+            oemRevision = 0;
+            try
+            {
+                const uint acpiProvider = 0x41435049; // 'ACPI'
+                uint size = EnumSystemFirmwareTables(acpiProvider, IntPtr.Zero, 0);
+                if (size < 4)
+                    return false;
+
+                IntPtr pBuffer = Marshal.AllocHGlobal((int)size);
+                try
+                {
+                    uint bytesEnum = EnumSystemFirmwareTables(acpiProvider, pBuffer, size);
+                    int count = (int)bytesEnum / 4;
+                    for (int i = 0; i < count; i++)
+                    {
+                        uint tableId = (uint)Marshal.ReadInt32(pBuffer, i * 4);
+                        uint tableSize = GetSystemFirmwareTable(acpiProvider, tableId, null, 0);
+                        if (tableSize < 28)
+                            continue;
+
+                        byte[] tableBuf = new byte[tableSize];
+                        if (GetSystemFirmwareTable(acpiProvider, tableId, tableBuf, tableSize) < 28)
+                            continue;
+                        if (TryReadPreyDevOemRevision(tableBuf, out oemRevision))
+                            return true;
+                    }
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(pBuffer);
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+
+        private static bool TryGetPreyDevOemRevisionFromRegistry(out uint oemRevision)
+        {
+            oemRevision = 0;
+            try
+            {
+                using RegistryKey? acpiKey = Registry.LocalMachine.OpenSubKey(@"HARDWARE\ACPI");
+                if (acpiKey == null)
+                    return false;
+
+                foreach (string tableName in acpiKey.GetSubKeyNames())
+                {
+                    using RegistryKey? tableKey = acpiKey.OpenSubKey(tableName);
+                    if (tableKey == null)
+                        continue;
+
+                    foreach (string oemId in tableKey.GetSubKeyNames())
+                    {
+                        if (!oemId.Contains("PREY", StringComparison.OrdinalIgnoreCase))
+                            continue;
+
+                        using RegistryKey? oemKey = tableKey.OpenSubKey(oemId);
+                        if (oemKey == null)
+                            continue;
+
+                        foreach (string tableId in oemKey.GetSubKeyNames())
+                        {
+                            if (!tableId.Contains("PREYDEV", StringComparison.OrdinalIgnoreCase))
+                                continue;
+
+                            using RegistryKey? idKey = oemKey.OpenSubKey(tableId);
+                            if (idKey == null)
+                                continue;
+
+                            if (idKey.GetValue("00000000") is byte[] direct &&
+                                TryReadPreyDevOemRevision(direct, out oemRevision))
+                            {
+                                return true;
+                            }
+
+                            foreach (string revision in idKey.GetSubKeyNames())
+                            {
+                                using RegistryKey? revisionKey = idKey.OpenSubKey(revision);
+                                if (revisionKey?.GetValue("00000000") is byte[] nested &&
+                                    TryReadPreyDevOemRevision(nested, out oemRevision))
+                                {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Reads the SSDT stored on the PREYSENSE volume without changing the partition.
+        /// </summary>
+        public static bool TryReadInstalledPreyDevRevision(out uint oemRevision)
+        {
+            oemRevision = 0;
+            try
+            {
+                using var searcher = new ManagementObjectSearcher("SELECT Label, Name, DeviceID FROM Win32_Volume");
+                using var volumes = searcher.Get();
+                foreach (ManagementObject volume in volumes)
+                {
+                    string label = Convert.ToString(volume["Label"]) ?? string.Empty;
+                    if (!label.Equals("PREYSENSE", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    foreach (string? root in new[] { Convert.ToString(volume["Name"]), Convert.ToString(volume["DeviceID"]) })
+                    {
+                        if (string.IsNullOrWhiteSpace(root))
+                            continue;
+
+                        string amlPath = Path.Combine(root, "EFI", "OC", "ACPI", "SSDT-PREYDEV.aml");
+                        if (!File.Exists(amlPath))
+                            continue;
+
+                        return TryReadPreyDevOemRevision(File.ReadAllBytes(amlPath), out oemRevision);
+                    }
+
+                    return false;
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+
+        public static OpenCoreIntegrationState DecideIntegrationState(
+            bool loadedSsdtMatches,
+            bool wmiReady,
+            bool currentPackageInstalled,
+            bool integrationPresent)
+        {
+            if (loadedSsdtMatches && wmiReady)
+                return OpenCoreIntegrationState.Active;
+            if (!loadedSsdtMatches && currentPackageInstalled)
+                return OpenCoreIntegrationState.RestartRequired;
+            if (integrationPresent && !loadedSsdtMatches)
+                return OpenCoreIntegrationState.UpdateRequired;
+            return OpenCoreIntegrationState.NotLoaded;
+        }
+
         public static bool DetectIsOpenCoreLoaded()
         {
             // 1. Query UEFI NVRAM opencore-version variable (GUID: {4D1FDA02-38C7-4A6A-9CC6-4BCCA8B30102})
@@ -223,8 +419,13 @@ namespace PreySense.Core.Acpi
             return false;
         }
 
-        public static string GetAcpiOverrideLabel(bool isOpenCoreLoaded) =>
-            isOpenCoreLoaded ? "OpenCore Active" : "OpenCore Not Loaded";
+        public static string GetAcpiOverrideLabel(OpenCoreIntegrationState state) => state switch
+        {
+            OpenCoreIntegrationState.Active => "OpenCore Active",
+            OpenCoreIntegrationState.RestartRequired => "Restart Required",
+            OpenCoreIntegrationState.UpdateRequired => "OpenCore Update Required",
+            _ => "OpenCore Not Loaded"
+        };
 
         /// <summary>
         /// True when the hidden PREYSENSE partition is on a disk. This is independent

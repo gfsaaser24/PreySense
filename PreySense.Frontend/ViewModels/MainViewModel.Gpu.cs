@@ -420,11 +420,19 @@ namespace PreySense.Frontend.ViewModels
         [RelayCommand]
         public async Task RefreshGpuProcessesAsync()
         {
-            ActiveGpuProcesses.Clear();
             var procs = await Task.Run(() => _hw.GetActiveGpuProcesses());
-            foreach (var p in procs)
+            for (int i = ActiveGpuProcesses.Count - 1; i >= 0; i--)
             {
-                ActiveGpuProcesses.Add(p);
+                if (!procs.Any(p => p.ProcessId == ActiveGpuProcesses[i].ProcessId))
+                    ActiveGpuProcesses.RemoveAt(i);
+            }
+            foreach (var process in procs)
+            {
+                var existing = ActiveGpuProcesses.FirstOrDefault(p => p.ProcessId == process.ProcessId);
+                if (existing == null)
+                    ActiveGpuProcesses.Add(process);
+                else if (!string.Equals(existing.ProcessName, process.ProcessName, StringComparison.Ordinal))
+                    existing.ProcessName = process.ProcessName;
             }
             StatusMessage = ActiveGpuProcesses.Count > 0 
                 ? $"{ActiveGpuProcesses.Count} process(es) holding discrete GPU active"

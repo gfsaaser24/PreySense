@@ -44,15 +44,6 @@ namespace PreySense.Overlay
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        public struct RECT
-        {
-            public int left;
-            public int top;
-            public int right;
-            public int bottom;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
         public struct SIZE
         {
             public int cx;
@@ -87,9 +78,6 @@ namespace PreySense.Overlay
 
         [DllImport("user32.dll", SetLastError = true)]
         public static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern bool GetWindowRect(IntPtr hWnd, ref RECT rect);
 
         [DllImport("user32.dll", SetLastError = true)]
         public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
@@ -141,9 +129,6 @@ namespace PreySense.Overlay
 
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX lpBuffer);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern bool SetProcessWorkingSetSize(IntPtr hProcess, nint dwMin, nint dwMax);
 
     }
 }

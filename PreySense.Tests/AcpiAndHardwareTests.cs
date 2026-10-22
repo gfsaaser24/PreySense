@@ -572,11 +572,26 @@ namespace PreySense.Tests
         [TestMethod]
         public void Test_OpenCoreSecurityValidator_AcpiOverrideLabel()
         {
-            string notLoaded = PreySense.Core.Acpi.OpenCoreSecurityValidator.GetAcpiOverrideLabel(false);
-            Assert.AreEqual("OpenCore Not Loaded", notLoaded);
-
-            string active = PreySense.Core.Acpi.OpenCoreSecurityValidator.GetAcpiOverrideLabel(true);
-            Assert.AreEqual("OpenCore Active", active);
+            var state = PreySense.Core.Acpi.OpenCoreSecurityValidator.OpenCoreIntegrationState.NotLoaded;
+            Assert.AreEqual("OpenCore Not Loaded", PreySense.Core.Acpi.OpenCoreSecurityValidator.GetAcpiOverrideLabel(state));
+            Assert.AreEqual("OpenCore Active", PreySense.Core.Acpi.OpenCoreSecurityValidator.GetAcpiOverrideLabel(PreySense.Core.Acpi.OpenCoreSecurityValidator.OpenCoreIntegrationState.Active));
+            Assert.AreEqual("Restart Required", PreySense.Core.Acpi.OpenCoreSecurityValidator.GetAcpiOverrideLabel(PreySense.Core.Acpi.OpenCoreSecurityValidator.OpenCoreIntegrationState.RestartRequired));
+            Assert.AreEqual("OpenCore Update Required", PreySense.Core.Acpi.OpenCoreSecurityValidator.GetAcpiOverrideLabel(PreySense.Core.Acpi.OpenCoreSecurityValidator.OpenCoreIntegrationState.UpdateRequired));
+            Assert.AreEqual(PreySense.Core.Acpi.OpenCoreSecurityValidator.OpenCoreIntegrationState.Active, PreySense.Core.Acpi.OpenCoreSecurityValidator.DecideIntegrationState(true, true, false, true));
+            Assert.AreEqual(PreySense.Core.Acpi.OpenCoreSecurityValidator.OpenCoreIntegrationState.NotLoaded, PreySense.Core.Acpi.OpenCoreSecurityValidator.DecideIntegrationState(true, false, true, true));
+            Assert.AreEqual(PreySense.Core.Acpi.OpenCoreSecurityValidator.OpenCoreIntegrationState.RestartRequired, PreySense.Core.Acpi.OpenCoreSecurityValidator.DecideIntegrationState(false, false, true, true));
+            Assert.AreEqual(PreySense.Core.Acpi.OpenCoreSecurityValidator.OpenCoreIntegrationState.UpdateRequired, PreySense.Core.Acpi.OpenCoreSecurityValidator.DecideIntegrationState(false, false, false, true));
+            Assert.AreEqual(PreySense.Core.Acpi.OpenCoreSecurityValidator.OpenCoreIntegrationState.NotLoaded, PreySense.Core.Acpi.OpenCoreSecurityValidator.DecideIntegrationState(false, false, false, false));
+            byte[] table = new byte[36];
+            table[0] = (byte)'S';
+            table[1] = (byte)'S';
+            table[2] = (byte)'D';
+            table[3] = (byte)'T';
+            Encoding.ASCII.GetBytes("PREY  ").CopyTo(table, 10);
+            Encoding.ASCII.GetBytes("PREYDEV ").CopyTo(table, 16);
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(table.AsSpan(24), 0x101);
+            Assert.IsTrue(PreySense.Core.Acpi.OpenCoreSecurityValidator.TryReadPreyDevOemRevision(table, out uint revision));
+            Assert.AreEqual(0x101u, revision);
         }
 
         [TestMethod]
@@ -1472,7 +1487,10 @@ namespace PreySense.Tests
             Assert.IsTrue(PreySense.TurboKeyWatcher.IsPhysicalModeKey(0x00010507));
             Assert.IsFalse(PreySense.TurboKeyWatcher.IsPhysicalModeKey(new byte[] { 0x01, 0x82 }));
             Assert.Contains("_keepOverlayAfterUiHide", overlay);
-            Assert.Contains("bool needFps = showFpsConfig || _gameOnly", overlay);
+            Assert.Contains("bool needFps = _showFps || _gameOnly", overlay);
+            Assert.Contains("LoadDisplayConfiguration", overlay);
+            Assert.Contains("overlay_show_frame_time", overlay);
+            Assert.Contains("1000.0 / _currentFps", overlay);
             string overlayBridge = File.ReadAllText(Path.Combine(root, "PreySense.Frontend", "Services", "OverlayBridge.cs"));
             string overlayManager = File.ReadAllText(Path.Combine(root, "PreySense.Overlay", "HardwareOverlayManager.cs"));
             string metricsUi = File.ReadAllText(Path.Combine(root, "PreySense.Frontend", "Views", "MetricsWindow.xaml.cs"));
@@ -1498,6 +1516,9 @@ namespace PreySense.Tests
             Assert.Contains("Maximum=\"3\"", metricsXaml);
             Assert.Contains("TickFrequency=\"0.25\"", metricsXaml);
             Assert.Contains("ApplyPollInterval", metricsUi);
+            Assert.Contains("CheckShowFrameTime.IsEnabled = showFps", metricsUi);
+            Assert.Contains("overlay_show_frame_time", metricsUi);
+            Assert.Contains("x:Name=\"CheckShowFrameTime\"", metricsXaml);
             Assert.Contains("overlay_update_interval_ms", File.ReadAllText(Path.Combine(root, "PreySense.Overlay", "AppConfig.cs")));
             Assert.AreEqual(250, PreySense.Overlay.AppConfig.OverlayUpdateIntervalMinMs);
             Assert.AreEqual(3000, PreySense.Overlay.AppConfig.OverlayUpdateIntervalMaxMs);
@@ -1505,7 +1526,6 @@ namespace PreySense.Tests
             Assert.AreEqual(250, PreySense.Overlay.AppConfig.OverlayUpdateIntervalStepMs);
             string appConfig = File.ReadAllText(Path.Combine(root, "PreySense.Overlay", "AppConfig.cs"));
             Assert.Contains("IsOverlay() || IsOverlayGameOnly()", appConfig);
-            Assert.Contains("ShouldRunOverlay()", overlay);
             string mainWindow = File.ReadAllText(Path.Combine(root, "PreySense.Frontend", "MainWindow.xaml.cs"));
             Assert.Contains("OverlayBridge.StartIfNeeded()", mainWindow);
             Assert.DoesNotContain("ApplyLightingButton_Click", lightingUi);
@@ -1628,6 +1648,60 @@ namespace PreySense.Tests
             Assert.DoesNotContain("if (mode == _hw.CurrentPowerMode)", modes);
             string servicesVm = File.ReadAllText(Path.Combine(root, "PreySense.Frontend", "ViewModels", "MainViewModel.Services.cs"));
             Assert.DoesNotContain("ColdBootHealer", servicesVm);
+        }
+
+        [TestMethod]
+        public void OpenCoreScripts_RepairWmiClassOnlyAfterReboot()
+        {
+            string root = GetSolutionRoot();
+            string install = File.ReadAllText(Path.Combine(root, "tools", "OpenCore_PreyBoost_EFI", "Install-To-ESP.ps1"));
+            string uninstall = File.ReadAllText(Path.Combine(root, "tools", "OpenCore_PreyBoost_EFI", "Uninstall-From-ESP.ps1"));
+            string repair = File.ReadAllText(Path.Combine(root, "tools", "OpenCore_PreyBoost_EFI", "Repair-PreySenseWmi.ps1"));
+            string mof = File.ReadAllText(Path.Combine(root, "acpi_staging", "preysense.mof"));
+
+            Assert.Contains("-Action Arm", install);
+            Assert.DoesNotContain("-Action Delete", install);
+            Assert.Contains("-Action Delete", uninstall);
+            Assert.DoesNotContain("preysense.mof", uninstall);
+            Assert.Contains("#pragma deleteclass(\"PreySenseControl\", NOFAIL)", repair);
+            Assert.Contains("Autorecover MOFs", repair);
+            Assert.DoesNotContain("resetrepository", repair);
+            Assert.DoesNotContain("#pragma autorecover", mof);
+
+            string dsl = File.ReadAllText(Path.Combine(root, "acpi_staging", "SSDT-PREYDEV.dsl"));
+            string efiDsl = File.ReadAllText(Path.Combine(root, "tools", "OpenCore_PreyBoost_EFI", "EFI", "OC", "ACPI", "SSDT-PREYDEV.dsl"));
+            string repairCode = File.ReadAllText(Path.Combine(root, "PreySense.Core", "Hardware", "PreySenseWmiRepair.cs"));
+            Assert.Contains("// PreySenseInterfaceVersion=0x0102", mof);
+            Assert.Contains("DefinitionBlock (\"\", \"SSDT\", 2, \"PREY\", \"PREYDEV\", 0x00000102)", dsl);
+            Assert.Contains("PKG1 [Zero] = 0x0102", dsl);
+            Assert.AreEqual(dsl, efiDsl);
+            Assert.IsTrue(PreySenseWmiRepair.TryParseInterfaceVersion(mof, out uint version));
+            Assert.AreEqual(0x0102u, version);
+            Assert.IsTrue(PreySenseWmiRepair.ShouldRebuild(PreySenseWmiSchemaState.Missing));
+            Assert.IsTrue(PreySenseWmiRepair.ShouldRebuild(PreySenseWmiSchemaState.Mismatched));
+            Assert.IsFalse(PreySenseWmiRepair.ShouldRebuild(PreySenseWmiSchemaState.Ready));
+            Assert.IsFalse(PreySenseWmiRepair.ShouldRebuild(PreySenseWmiSchemaState.RuntimeFailure));
+            Assert.IsFalse(PreySenseWmiRepair.ShouldRebuild(PreySenseWmiSchemaState.SsdtVersionDiffers));
+            Assert.Contains("\"-check \\\"", repairCode);
+            Assert.Contains("IsInRole(WindowsBuiltInRole.Administrator)", repairCode);
+            Assert.Contains("TryGetPreyDevOemRevision", repairCode);
+            string validator = File.ReadAllText(Path.Combine(root, "PreySense.Core", "Acpi", "OpenCoreSecurityValidator.cs"));
+            Assert.Contains("TryGetPreyDevOemRevisionFromRegistry", validator);
+            string session = File.ReadAllText(Path.Combine(root, "PreySense.Frontend", "ViewModels", "MainViewModel.Session.cs"));
+            string acpiUi = File.ReadAllText(Path.Combine(root, "PreySense.Frontend", "ViewModels", "MainViewModel.Acpi.cs"));
+            Assert.Contains("DecideIntegrationState", session);
+            int matchIdx = session.IndexOf("loadedMatches", StringComparison.Ordinal);
+            int registerIdx = session.IndexOf("TryRegister", StringComparison.Ordinal);
+            Assert.IsTrue(matchIdx >= 0 && registerIdx > matchIdx);
+            Assert.Contains("if (loadedMatches)", session);
+            Assert.Contains("ConfirmText = \"Reinstall OpenCore\"", acpiUi);
+            Assert.Contains("CancelText = \"Later\"", acpiUi);
+            Assert.Contains("if (reinstall == true)", acpiUi);
+            Assert.Contains("InstallOpenCoreToEspAsync", acpiUi);
+            int revisionIdx = repairCode.IndexOf("TryGetPreyDevOemRevision", StringComparison.Ordinal);
+            int checkIdx = repairCode.IndexOf("MofCompMode.Check", StringComparison.Ordinal);
+            int deleteIdx = repairCode.IndexOf("MofCompMode.Delete", StringComparison.Ordinal);
+            Assert.IsTrue(revisionIdx >= 0 && checkIdx > revisionIdx && deleteIdx > checkIdx, "Check the loaded SSDT, then the MOF, before deleting the class.");
         }
     }
 }

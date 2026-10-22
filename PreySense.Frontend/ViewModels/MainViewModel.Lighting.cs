@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -78,7 +79,7 @@ namespace PreySense.Frontend.ViewModels
         private const int BrightnessStep = 25;
         private const int CoverSyncFrameIntervalMs = 250;
         private bool _coverSyncFrameHooked;
-        private DateTime _lastCoverSyncFrameUtc = DateTime.MinValue;
+        private long _lastCoverSyncFrameTick;
 
         private static int SnapBrightness(int value) =>
             Math.Clamp((int)Math.Round(value / (double)BrightnessStep) * BrightnessStep, 0, 100);
@@ -649,9 +650,10 @@ namespace PreySense.Frontend.ViewModels
                 return;
             if (!UsesAveragedCoverColor())
                 return;
-            if ((DateTime.UtcNow - _lastCoverSyncFrameUtc).TotalMilliseconds < CoverSyncFrameIntervalMs)
+            long now = Stopwatch.GetTimestamp();
+            if (_lastCoverSyncFrameTick != 0 && Stopwatch.GetElapsedTime(_lastCoverSyncFrameTick, now).TotalMilliseconds < CoverSyncFrameIntervalMs)
                 return;
-            _lastCoverSyncFrameUtc = DateTime.UtcNow;
+            _lastCoverSyncFrameTick = now;
 
             string hex = AverageZoneHexColor(
                 $"#{frame[0].R:X2}{frame[0].G:X2}{frame[0].B:X2}",

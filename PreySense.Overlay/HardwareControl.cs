@@ -62,6 +62,8 @@ namespace PreySense.Overlay
         private static float? _lhmCpuPower;
         private static float _lhmCpuClock;
         private static int? _lastCpuUsage;
+        private static long _lastSlowSensorTick;
+        private const int SlowSensorIntervalMs = 1000;
 
         private static void EnsureLhmOpen()
         {
@@ -150,14 +152,6 @@ namespace PreySense.Overlay
             }
 
             return name.Split(' ', StringSplitOptions.RemoveEmptyEntries) is { Length: > 0 } t ? t[0] : "";
-        }
-
-        public static void ResetCPUPowerCounter()
-        {
-        }
-
-        public static void InitCPUPowerAsync()
-        {
         }
 
         public static void Warmup()
@@ -272,7 +266,7 @@ namespace PreySense.Overlay
         private static long _cpuLastIdle, _cpuLastKernel, _cpuLastUser, _cpuLastTick;
         private static bool _cpuUsageBaseline;
 
-        public static int? GetCPUUsage()
+        private static int? GetCPUUsage()
         {
             if (!NativeMethods.GetSystemTimes(out long idle, out long kernel, out long user)) return null;
 
@@ -295,7 +289,7 @@ namespace PreySense.Overlay
             return _lastCpuUsage;
         }
 
-        public static (int percent, int usedMb)? GetRAMInfo()
+        private static (int percent, int usedMb)? GetRAMInfo()
         {
             var status = new NativeMethods.MEMORYSTATUSEX { dwLength = (uint)System.Runtime.InteropServices.Marshal.SizeOf<NativeMethods.MEMORYSTATUSEX>() };
             if (!NativeMethods.GlobalMemoryStatusEx(ref status)) return null;
@@ -303,7 +297,7 @@ namespace PreySense.Overlay
             return ((int)status.dwMemoryLoad, usedMb);
         }
 
-        public static float? GetGPUPower()
+        private static float? GetGPUPower()
         {
             try
             {
@@ -323,25 +317,26 @@ namespace PreySense.Overlay
 
             var wmi = WmiProvider?.Invoke() ?? (_fallbackWmi ??= new WmiController());
 
-            cpuFanRPM = wmi?.CpuFanRpm;
-            gpuFanRPM = wmi?.GpuFanRpm;
+            long now = Environment.TickCount64;
+            if (_lastSlowSensorTick == 0 || now - _lastSlowSensorTick >= SlowSensorIntervalMs)
+            {
+                _lastSlowSensorTick = now;
+                cpuFanRPM = wmi?.CpuFanRpm;
+                gpuFanRPM = wmi?.GpuFanRpm;
 
-            cpuTemp = wmi?.CpuTemp ?? -1;
-            if (cpuTemp <= 0 && _lhmCpuTemp.HasValue && _lhmCpuTemp.Value > 0)
-            {
-                cpuTemp = _lhmCpuTemp.Value;
-            }
-            gpuTemp = wmi?.GpuTemp ?? -1;
+                cpuTemp = wmi?.CpuTemp ?? -1;
+                if (cpuTemp <= 0 && _lhmCpuTemp.HasValue && _lhmCpuTemp.Value > 0)
+                    cpuTemp = _lhmCpuTemp.Value;
+                gpuTemp = wmi?.GpuTemp ?? -1;
 
-            int? liveGpuTemp = NvmlHelper.GetGpuTemperature();
-            if (liveGpuTemp is null or <= 0)
-            {
-                try { liveGpuTemp = (GpuControl as NvidiaGpuControl)?.ReadCurrentTemperature(); }
-                catch { liveGpuTemp = null; }
-            }
-            if (liveGpuTemp is > 0)
-            {
-                gpuTemp = liveGpuTemp.Value;
+                int? liveGpuTemp = NvmlHelper.GetGpuTemperature();
+                if (liveGpuTemp is null or <= 0)
+                {
+                    try { liveGpuTemp = (GpuControl as NvidiaGpuControl)?.ReadCurrentTemperature(); }
+                    catch { liveGpuTemp = null; }
+                }
+                if (liveGpuTemp is > 0)
+                    gpuTemp = liveGpuTemp.Value;
             }
 
             cpuUsage = GetCPUUsage();

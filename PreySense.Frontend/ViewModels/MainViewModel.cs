@@ -119,25 +119,7 @@ namespace PreySense.Frontend.ViewModels
             }
 
             ActiveGpuMuxMode = LoadGpuModePreference();
-            try
-            {
-                if (_hw.IsDdsAvailable && _hw.IsDdsSupported())
-                {
-                    var ddsStatus = _hw.GetDdsStatus();
-                    if (ddsStatus != null && ddsStatus.IsSupported)
-                    {
-                        int liveDdsMode = ddsStatus.IsAutomatic
-                            ? 1
-                            : (ddsStatus.ActiveMux == Gpu.DdsActiveMux.dGPU ? 2 : 0);
-                        ActiveGpuMuxMode = liveDdsMode;
-                        SaveGpuModePreference(liveDdsMode);
-                    }
-                }
-            }
-            catch { }
             GpuMuxModeName = GetGpuModeName(ActiveGpuMuxMode);
-            try { IsBiosDiscreteGpuActive = _hw.IsBiosDiscreteGpuActive; } catch { }
-            InitializeRefreshRates();
             DisplayPanelInfo = $"{CurrentRefreshRate}Hz" + (IsLcdOverdriveEnabled ? " • Overdrive" : "");
 
             LoadCoverLightingSettings();
@@ -174,6 +156,71 @@ namespace PreySense.Frontend.ViewModels
             TauSeconds = TauForMode(ActivePowerMode);
 
             _ = InitializeSessionAsync();
+            if (_hw is MockHardwareService)
+                InitializeMockHardwareDiscovery();
+            else
+                _ = InitializeHardwareDiscoveryAsync();
+        }
+
+        private void InitializeMockHardwareDiscovery()
+        {
+            try
+            {
+                if (_hw.IsDdsAvailable && _hw.IsDdsSupported() && _hw.GetDdsStatus() is { IsSupported: true } status)
+                {
+                    ActiveGpuMuxMode = status.IsAutomatic ? 1 : status.ActiveMux == DdsActiveMux.dGPU ? 2 : 0;
+                    GpuMuxModeName = GetGpuModeName(ActiveGpuMuxMode);
+                    NotifyGpuSelectionsChanged();
+                }
+            }
+            catch { }
+            try { IsBiosDiscreteGpuActive = _hw.IsBiosDiscreteGpuActive; } catch { }
+            InitializeRefreshRates();
+        }
+
+        private async Task InitializeHardwareDiscoveryAsync()
+        {
+            var result = await Task.Run(() =>
+            {
+                int? liveDdsMode = null;
+                bool? biosDiscrete = null;
+                System.Collections.Generic.List<int>? rates = null;
+                int refreshRate = 0;
+                try
+                {
+                    if (_hw.IsDdsAvailable && _hw.IsDdsSupported())
+                    {
+                        var status = _hw.GetDdsStatus();
+                        if (status is { IsSupported: true })
+                            liveDdsMode = status.IsAutomatic ? 1 : status.ActiveMux == DdsActiveMux.dGPU ? 2 : 0;
+                    }
+                }
+                catch { }
+                try { biosDiscrete = _hw.IsBiosDiscreteGpuActive; } catch { }
+                try
+                {
+                    rates = _hw.GetSupportedRefreshRates();
+                    refreshRate = _hw.GetDisplayRefreshRate();
+                }
+                catch { }
+                return (liveDdsMode, biosDiscrete, rates, refreshRate);
+            });
+
+            if (_disposed) return;
+            await _dispatcher.InvokeAsync(() =>
+            {
+                if (_disposed) return;
+                if (result.liveDdsMode.HasValue)
+                {
+                    ActiveGpuMuxMode = result.liveDdsMode.Value;
+                    GpuMuxModeName = GetGpuModeName(ActiveGpuMuxMode);
+                    SaveGpuModePreference(ActiveGpuMuxMode);
+                    NotifyGpuSelectionsChanged();
+                }
+                if (result.biosDiscrete.HasValue)
+                    IsBiosDiscreteGpuActive = result.biosDiscrete.Value;
+                ApplyRefreshRateOptions(result.rates, result.refreshRate);
+            });
         }
 
         private void PollTelemetry()

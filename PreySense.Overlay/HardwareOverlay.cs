@@ -34,32 +34,20 @@ namespace PreySense.Overlay
         private const int BasePadX = 3;
         private const int BasePadY = 2;
         private const int BaseFpsColWidth = 52;
-        private const int BaseLeftColWidth = 118;
-        private const int BaseChartColWidth = 78;
-        private const int BasePowerGap = 0;
-        private const int BasePowerColWidth = 38;
-        private const int BaseColGap = 3;
-        private const int BaseChartGap = 0;
         private const int CornerRadius = 0;
         private const int MarginFromEdge = 10;
-        private const int BaseLightLeftColWidth = 72;
-        private const int BaseUsageBarWidth = 4;
-        private const int BaseUsageNumGap = 1;
-        private const int BaseUsageNumColWidth = 24;
-        private const int BaseUsageBarYNudge = 1;
-        private const int BaseMemBarGap = -12;
-        private const int BaseMemNumColWidth = 38;
         private const int BaseInnerPadX = 3;
         private const int BaseInnerPadY = 2;
         private const int BaseSectionGap = 1;
         private static readonly Color DefaultGpuColor = Color.White;
         private static readonly Color DefaultCpuColor = Color.White;
-        private static readonly Color OverlayBorderColor = Color.FromArgb(68, 140, 140, 140);
         private static readonly Color OverlayTopGlowColor = Color.FromArgb(8, 255, 255, 255);
         private static readonly Color OverlayBottomGlowColor = Color.FromArgb(20, 0, 0, 0);
 
         private const int DragMinAlpha = 110;
         private static readonly SolidBrush _dragBgBrush = new(Color.FromArgb(DragMinAlpha, 0, 0, 0));
+        private static readonly SolidBrush _topGlowBrush = new(OverlayTopGlowColor);
+        private static readonly SolidBrush _bottomGlowBrush = new(OverlayBottomGlowColor);
         private int _bgAlpha = 100;
 
         private SolidBrush _bgBrush = new(Color.FromArgb(100, 0, 0, 0));
@@ -105,13 +93,13 @@ namespace PreySense.Overlay
         private readonly float[] _gpuVoltageHistory = new float[HistoryLength];
         private readonly float[] _ramSpeedHistory = new float[HistoryLength];
         private readonly float[] _vramSpeedHistory = new float[HistoryLength];
+        private static readonly float[] EmptyHistory = new float[HistoryLength];
 
         private const int FpsShowDelayMs = 3000;
         private const int FpsPositiveShowDelayMs = 3000;
         private readonly System.Timers.Timer _timer = new(AppConfig.OverlayUpdateIntervalDefaultMs) { AutoReset = true };
         private int _tickRunning;
         private EtwFpsMonitor? _fps;
-        private Task? _fpsTask;
         private volatile int _currentFps = -1;
         private long _fpsZeroSinceTick;
         private long _fpsPositiveSinceTick;
@@ -123,10 +111,16 @@ namespace PreySense.Overlay
         private bool _hidden;
         private bool _screenshotHidden;
         private int _shownPid;
+        private int _classifiedPid;
+        private string? _classifiedProcessName;
         private bool _fgDesktop;
         private bool _wasOwnWindow;
         private bool _keepOverlayAfterUiHide;
         private const int MinGameFps = 6;
+        private readonly string[] _columnTypes = new string[8];
+        private readonly bool[] _columnGraphs = new bool[8];
+        private bool _showFps = true;
+        private bool _showFrameTime;
 
         private static readonly HashSet<string> DesktopApps = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -159,6 +153,7 @@ namespace PreySense.Overlay
 
         public void Prepare()
         {
+            LoadDisplayConfiguration();
             _scalePercent = Math.Clamp(AppConfig.Get("overlay_scale_percent", 100), MinScalePercent, MaxScalePercent);
             Size = CalculateOverlaySize(_scalePercent);
             EnsureHandleCreated();
@@ -290,9 +285,7 @@ namespace PreySense.Overlay
 
             for (int i = 1; i <= 8; i++)
             {
-                string configKey = $"overlay_col_{i}";
-                string defaultVal = AppConfig.DefaultOverlayColumn(i);
-                string colType = AppConfig.GetString(configKey, defaultVal);
+                string colType = _columnTypes[i - 1];
                 if (colType == "None") continue;
 
                 int colW = colType switch
@@ -311,8 +304,7 @@ namespace PreySense.Overlay
                 if (colW > 0)
                 {
                     cursor += colW + colGap;
-                    int defaultGraph = (i == 5) ? 1 : 0;
-                    bool hasGraph = AppConfig.Get($"overlay_col_{i}_graph", defaultGraph) == 1;
+                    bool hasGraph = _columnGraphs[i - 1];
                     if (hasGraph)
                     {
                         cursor += S(sc, 6) + S(sc, 72) + colGap;
@@ -371,13 +363,14 @@ namespace PreySense.Overlay
             NativeMethods.GetWindowThreadProcessId(NativeMethods.GetForegroundWindow(), out uint fgPidRaw);
             int fgPid = (int)fgPidRaw;
             bool ownWindow = fgPid == 0 || fgPid == Environment.ProcessId;
-            bool desktopFg = !ownWindow && IsDesktopApp(fgPid);
+            string? foregroundProcessName = ownWindow ? null : GetForegroundProcessName(fgPid);
+            bool desktopFg = foregroundProcessName != null && DesktopApps.Contains(foregroundProcessName);
             if (_wasOwnWindow && desktopFg)
                 _keepOverlayAfterUiHide = true;
             else if (!ownWindow && !desktopFg)
                 _keepOverlayAfterUiHide = false;
 
-            bool screenshotActive = !ownWindow && IsScreenshotApp(fgPid);
+            bool screenshotActive = foregroundProcessName != null && ScreenshotApps.Contains(foregroundProcessName);
             if (UpdateScreenshotVisibility(screenshotActive))
             {
                 _wasOwnWindow = ownWindow;
@@ -438,13 +431,10 @@ namespace PreySense.Overlay
             bool trackUsage = false, trackTemp = false, trackClock = false, trackPower = false, trackMemory = false, trackFan = false, trackVoltage = false, trackMemSpeed = false;
             for (int i = 1; i <= 8; i++)
             {
-                string configKey = $"overlay_col_{i}";
-                string defaultVal = AppConfig.DefaultOverlayColumn(i);
-                string colType = AppConfig.GetString(configKey, defaultVal);
+                string colType = _columnTypes[i - 1];
                 if (colType == "None") continue;
 
-                int defaultGraph = (i == 5) ? 1 : 0;
-                if (AppConfig.Get($"overlay_col_{i}_graph", defaultGraph) == 1)
+                if (_columnGraphs[i - 1])
                 {
                     switch (colType)
                     {
@@ -524,24 +514,20 @@ namespace PreySense.Overlay
             return false;
         }
 
-        private static bool IsDesktopApp(int pid)
+        private string? GetForegroundProcessName(int pid)
         {
-            try
-            {
-                using var p = Process.GetProcessById(pid);
-                return DesktopApps.Contains(p.ProcessName);
-            }
-            catch { return false; }
-        }
+            if (pid == _classifiedPid)
+                return _classifiedProcessName;
 
-        private static bool IsScreenshotApp(int pid)
-        {
+            _classifiedPid = pid;
+            _classifiedProcessName = null;
             try
             {
                 using var p = Process.GetProcessById(pid);
-                return ScreenshotApps.Contains(p.ProcessName);
+                _classifiedProcessName = p.ProcessName;
             }
-            catch { return false; }
+            catch { }
+            return _classifiedProcessName;
         }
 
         protected override void PerformPaint(PaintEventArgs e)
@@ -573,9 +559,7 @@ namespace PreySense.Overlay
             int columnsStartX = cursor;
             for (int i = 1; i <= 8; i++)
             {
-                string configKey = $"overlay_col_{i}";
-                string defaultVal = AppConfig.DefaultOverlayColumn(i);
-                string colType = AppConfig.GetString(configKey, defaultVal);
+                string colType = _columnTypes[i - 1];
                 if (colType == "None") continue;
 
                 int colW = colType switch
@@ -594,8 +578,7 @@ namespace PreySense.Overlay
                 if (colW > 0)
                 {
                     cursor += colW + colGap;
-                    int defaultGraph = (i == 5) ? 1 : 0;
-                    bool hasGraph = AppConfig.Get($"overlay_col_{i}_graph", defaultGraph) == 1;
+                    bool hasGraph = _columnGraphs[i - 1];
                     if (hasGraph)
                     {
                         cursor += S(sc, 6) + S(sc, 72) + colGap;
@@ -613,9 +596,7 @@ namespace PreySense.Overlay
             g.PixelOffsetMode = PixelOffsetMode.HighQuality;
             g.TextRenderingHint = _scalePercent <= 75 ? TextRenderingHint.ClearTypeGridFit : TextRenderingHint.AntiAliasGridFit;
 
-            using var fillBrush = new SolidBrush(_dragModeActive && _bgAlpha < DragMinAlpha ? Color.FromArgb(Math.Max(_bgAlpha, DragMinAlpha), 0, 0, 0) : Color.FromArgb(_bgAlpha, 0, 0, 0));
-            using var topGlowBrush = new SolidBrush(OverlayTopGlowColor);
-            using var bottomGlowBrush = new SolidBrush(OverlayBottomGlowColor);
+            SolidBrush fillBrush = _dragModeActive && _bgAlpha < DragMinAlpha ? _dragBgBrush : _bgBrush;
 
             if (radius > 0)
             {
@@ -630,8 +611,8 @@ namespace PreySense.Overlay
                     path.AddArc(bounds.X, bounds.Bottom - diameter, diameter, diameter, 90, 90);
                     path.CloseAllFigures();
                     g.SetClip(path);
-                    g.FillRectangle(topGlowBrush, Bound.X + 1, Bound.Y + 1, Bound.Width - 2, Math.Max(1, Bound.Height / 3));
-                    g.FillRectangle(bottomGlowBrush, Bound.X + 1, Bound.Bottom - Math.Max(2, Bound.Height / 4), Bound.Width - 2, Math.Max(2, Bound.Height / 4));
+                    g.FillRectangle(_topGlowBrush, Bound.X + 1, Bound.Y + 1, Bound.Width - 2, Math.Max(1, Bound.Height / 3));
+                    g.FillRectangle(_bottomGlowBrush, Bound.X + 1, Bound.Bottom - Math.Max(2, Bound.Height / 4), Bound.Width - 2, Math.Max(2, Bound.Height / 4));
                     g.ResetClip();
                 }
             }
@@ -653,7 +634,9 @@ namespace PreySense.Overlay
 
             var font    = _font!;
             var rpmFont = _rpmFont!;
+            var unitFont = _unitFont!;
             var fpsBold = _fpsBold!;
+            var sf = StringFormat.GenericTypographic;
 
             float charW = g.MeasureString("XX", font).Width - g.MeasureString("X", font).Width;
 
@@ -664,13 +647,23 @@ namespace PreySense.Overlay
             if (showFps)
             {
                 string fpsStr = Math.Max(0, _currentFps).ToString();
-                float fpsW = g.MeasureString(fpsStr, fpsBold).Width;
-                g.DrawString(fpsStr, fpsBold, _gpuBrush,
-                new PointF(padX + innerPadX - S(sc, 4) + (fpsColW - fpsW) / 2f, topY));
+                float fpsX = padX + innerPadX - S(sc, 4);
+                if (_showFrameTime && _currentFps > 0)
+                {
+                    string frameTime = $"{1000.0 / _currentFps:F1}ms";
+                    float fpsW = g.MeasureString(fpsStr, font).Width;
+                    float frameTimeW = g.MeasureString(frameTime, unitFont).Width;
+                    g.DrawString(fpsStr, font, _gpuBrush, new PointF(fpsX + (fpsColW - fpsW) / 2f, topY), sf);
+                    g.DrawString(frameTime, unitFont, _gpuBrush, new PointF(fpsX + (fpsColW - frameTimeW) / 2f, topY + lineH), sf);
+                }
+                else
+                {
+                    float fpsW = g.MeasureString(fpsStr, fpsBold).Width;
+                    g.DrawString(fpsStr, fpsBold, _gpuBrush, new PointF(fpsX + (fpsColW - fpsW) / 2f, topY));
+                }
             }
 
             // Labels
-            var sf = StringFormat.GenericTypographic;
             g.DrawString("CPU", font, _cpuBrush, new PointF(leftX, textY), sf);
             g.DrawString("GPU", font, _gpuBrush, new PointF(leftX, textY + lineH + lineGap), sf);
 
@@ -680,9 +673,7 @@ namespace PreySense.Overlay
 
             for (int i = 1; i <= 8; i++)
             {
-                string configKey = $"overlay_col_{i}";
-                string defaultVal = AppConfig.DefaultOverlayColumn(i);
-                string colType = AppConfig.GetString(configKey, defaultVal);
+                string colType = _columnTypes[i - 1];
                 if (colType == "None") continue;
 
                 int colW = colType switch
@@ -703,8 +694,7 @@ namespace PreySense.Overlay
                     DrawMetricColumn(g, font, _unitFont!, rpmFont, sc, colType, colCursor, colW, textY, lineH, lineGap);
                     colCursor += colW + colGap;
 
-                    int defaultGraph = (i == 5) ? 1 : 0;
-                    bool hasGraph = AppConfig.Get($"overlay_col_{i}_graph", defaultGraph) == 1;
+                    bool hasGraph = _columnGraphs[i - 1];
                     if (hasGraph)
                     {
                         int graphGap = S(sc, 6);
@@ -740,7 +730,7 @@ namespace PreySense.Overlay
 
         private bool ShouldShowFps()
         {
-            if (AppConfig.Get("overlay_show_fps", 1) == 0) return false;
+            if (!_showFps) return false;
             if (_currentFps > 0)
             {
                 long positiveSince = _fpsPositiveSinceTick;
@@ -769,33 +759,6 @@ namespace PreySense.Overlay
             double gb = usedMb.HasValue ? usedMb.Value / 1024.0 : 0.0;
             string s = gb.ToString("F1") + "GB";
             DrawTextWithUnit(g, font, unitFont, s, brush, new PointF(x + colW, y), alignRight: true);
-        }
-
-        private static float MeasureTextWithUnit(Graphics g, Font mainFont, Font unitFont, string text)
-        {
-            if (string.IsNullOrEmpty(text)) return 0f;
-
-            string[] units = { "GHz", "MHz", "mV", "GB", "W", "%", "v", "Â°C", "Â°" };
-            string matchedUnit = "";
-            string trimmed = text.Trim();
-            foreach (var u in units)
-            {
-                if (trimmed.EndsWith(u))
-                {
-                    matchedUnit = u;
-                    break;
-                }
-            }
-
-            var sf = StringFormat.GenericTypographic;
-            if (matchedUnit.Length <= 0)
-                return g.MeasureString(text, mainFont, 1000, sf).Width;
-
-            string valuePart = trimmed.Substring(0, trimmed.Length - matchedUnit.Length);
-            float valW = g.MeasureString(valuePart, mainFont, 1000, sf).Width;
-            float unitW = g.MeasureString(matchedUnit, unitFont, 1000, sf).Width;
-            float gap = 0.5f * mainFont.Size / 11f;
-            return valW + unitW + gap;
         }
 
         private static float DrawTextWithUnit(Graphics g, Font mainFont, Font unitFont, string text, Brush brush, PointF pos, bool alignRight = false)
@@ -938,7 +901,7 @@ namespace PreySense.Overlay
                 "Fan Speed" => (_cpuFanHistory, _gpuFanHistory),
                 "Voltage" => (_cpuVoltageHistory, _gpuVoltageHistory),
                 "Memory Speed" => (_ramSpeedHistory, _vramSpeedHistory),
-                _ => (new float[HistoryLength], new float[HistoryLength])
+                _ => (EmptyHistory, EmptyHistory)
             };
         }
 
@@ -1037,14 +1000,6 @@ namespace PreySense.Overlay
             AppConfig.Set("overlay_offset_y", offsetY);
         }
 
-        private static Color ParseColor(string key, Color fallback)
-        {
-            string hex = AppConfig.GetString(key);
-            if (string.IsNullOrEmpty(hex)) return fallback;
-            try { return ColorTranslator.FromHtml(hex.StartsWith("#") ? hex : "#" + hex); }
-            catch { return fallback; }
-        }
-
         private void ApplyColors()
         {
             Color gpu = Color.White;
@@ -1075,11 +1030,10 @@ namespace PreySense.Overlay
                 _timer.Start();
         }
 
-        private void ApplySensorFlags() { }
-
         /// <summary>Called by MetricsSettingsForm / MetricsWindow when the user changes settings while overlay is running.</summary>
         public void RefreshDisplayFlags()
         {
+            LoadDisplayConfiguration();
             _gameOnly = AppConfig.IsOverlayGameOnly();
             int configuredScale = Math.Clamp(AppConfig.Get("overlay_scale_percent", 100), MinScalePercent, MaxScalePercent);
             if (configuredScale != _scalePercent)
@@ -1147,21 +1101,19 @@ namespace PreySense.Overlay
 
         private void EnsureFpsMonitor()
         {
-            bool showFpsConfig = AppConfig.Get("overlay_show_fps", 1) == 1;
-            bool needFps = showFpsConfig || _gameOnly;
+            bool needFps = _showFps || _gameOnly;
             if (!needFps)
             {
                 _fps?.Dispose();
                 _fps = null;
                 ResetFpsDisplayState();
-                _fpsTask = null;
                 return;
             }
 
             if (_fps != null || !(_gameOnly || AppConfig.IsOverlay())) return;
             ResetFpsDisplayState();
             _fps = new EtwFpsMonitor();
-            _fpsTask = Task.Run(() => _fps.Start());
+            _ = Task.Run(() => _fps.Start());
         }
 
         private void OnDisplaySettingsChanged(object? sender, EventArgs e)
@@ -1198,11 +1150,14 @@ namespace PreySense.Overlay
         public void StartOverlay()
         {
             AppConfig.EnsureDefaultOverlayColumns();
+            LoadDisplayConfiguration();
             _active = true;
             _lastFgPid = 0;
             _gameOnly = AppConfig.IsOverlayGameOnly();
             _hidden = false;
             _shownPid = 0;
+            _classifiedPid = 0;
+            _classifiedProcessName = null;
             _fgDesktop = false;
             _wasOwnWindow = false;
             _keepOverlayAfterUiHide = false;
@@ -1210,8 +1165,6 @@ namespace PreySense.Overlay
             _scalePercent = Math.Clamp(AppConfig.Get("overlay_scale_percent", 100), MinScalePercent, MaxScalePercent);
             ApplyColors();
             SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
-            HardwareControl.ResetCPUPowerCounter();
-
             _fps?.Dispose();
             _fps = null;
             ResetFpsDisplayState();
@@ -1245,6 +1198,17 @@ namespace PreySense.Overlay
             });
         }
 
+        private void LoadDisplayConfiguration()
+        {
+            for (int i = 1; i <= _columnTypes.Length; i++)
+            {
+                _columnTypes[i - 1] = AppConfig.GetString($"overlay_col_{i}", AppConfig.DefaultOverlayColumn(i));
+                _columnGraphs[i - 1] = AppConfig.Get($"overlay_col_{i}_graph", i == 5 ? 1 : 0) == 1;
+            }
+            _showFps = AppConfig.Get("overlay_show_fps", 1) == 1;
+            _showFrameTime = _showFps && AppConfig.Get("overlay_show_frame_time", 0) == 1;
+        }
+
         public void StopOverlay()
         {
             _active = false;
@@ -1257,8 +1221,6 @@ namespace PreySense.Overlay
             _fps = null;
             ResetFpsDisplayState();
 
-            _fpsTask = null;
-
             _font?.Dispose();     _font     = null;
             _rpmFont?.Dispose();  _rpmFont  = null;
             _unitFont?.Dispose(); _unitFont = null;
@@ -1269,15 +1231,6 @@ namespace PreySense.Overlay
             base.Hide();
         }
 
-        public void SuspendForDisplayOff()
-        {
-            if (_active) StopOverlay();
-        }
-
-        public void ResumeForDisplayOn()
-        {
-            if (!_active && AppConfig.ShouldRunOverlay()) StartOverlay();
-        }
     }
 }
 

@@ -3,6 +3,15 @@ using System.Management;
 
 namespace PreySense.Core.Hardware
 {
+    public enum PreySenseWmiSchemaState
+    {
+        Missing,
+        Mismatched,
+        SsdtVersionDiffers,
+        RuntimeFailure,
+        Ready
+    }
+
     public class PreySenseWmiDeviceClient
     {
         public const string WmiNamespace = @"root\WMI";
@@ -84,6 +93,127 @@ namespace PreySense.Core.Hardware
             }
 
             return default;
+        }
+
+        /// <summary>
+        /// Checks the installed class against the packaged interface version.
+        /// A live Tau read is attempted only after the schema and SSDT version match.
+        /// </summary>
+        public static PreySenseWmiSchemaState InspectInterface(uint expectedVersion)
+        {
+            try
+            {
+                using var cls = new ManagementClass($@"\\.\root\wmi:{WmiClassName}");
+                cls.Get();
+                if (!HasOutProperty(cls, "GetVersion", "Version") ||
+                    !HasOutProperty(cls, "GetCpuPowerLimits", "TauTimeWindow"))
+                {
+                    return PreySenseWmiSchemaState.Mismatched;
+                }
+
+                using var searcher = new ManagementObjectSearcher(WmiNamespace, $"SELECT * FROM {WmiClassName}");
+                using var collection = searcher.Get();
+                foreach (ManagementObject obj in collection)
+                {
+                    using (obj)
+                    {
+                        if (!TryReadVersion(obj, out uint version))
+                            return PreySenseWmiSchemaState.Mismatched;
+                        if (version != expectedVersion)
+                            return PreySenseWmiSchemaState.SsdtVersionDiffers;
+
+                        return TryReadTau(obj);
+                    }
+                }
+
+                return PreySenseWmiSchemaState.Missing;
+            }
+            catch (ManagementException ex) when (ex.ErrorCode is ManagementStatus.InvalidClass
+                or ManagementStatus.NotFound
+                or ManagementStatus.InvalidNamespace
+                or ManagementStatus.InvalidObject)
+            {
+                return PreySenseWmiSchemaState.Missing;
+            }
+            catch (ManagementException)
+            {
+                return PreySenseWmiSchemaState.Mismatched;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[PreySenseWmiDeviceClient] InspectInterface failed: {ex.Message}");
+                return PreySenseWmiSchemaState.RuntimeFailure;
+            }
+        }
+
+        private static bool HasOutProperty(ManagementClass cls, string methodName, string propertyName)
+        {
+            try
+            {
+                ManagementBaseObject? outs = cls.Methods[methodName]?.OutParameters;
+                if (outs == null)
+                    return false;
+
+                foreach (PropertyData property in outs.Properties)
+                {
+                    if (property.Name.Equals(propertyName, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+
+            return false;
+        }
+
+        private static bool TryReadVersion(ManagementObject obj, out uint version)
+        {
+            version = 0;
+            try
+            {
+                using var input = obj.GetMethodParameters("GetVersion");
+                using var output = obj.InvokeMethod("GetVersion", input, null);
+                if (output?["Version"] == null)
+                    return false;
+
+                version = Convert.ToUInt32(output["Version"]);
+                return true;
+            }
+            catch (ManagementException)
+            {
+                return false;
+            }
+        }
+
+        private static PreySenseWmiSchemaState TryReadTau(ManagementObject obj)
+        {
+            try
+            {
+                using var input = obj.GetMethodParameters("GetCpuPowerLimits");
+                using var output = obj.InvokeMethod("GetCpuPowerLimits", input, null);
+                if (output == null || Convert.ToUInt32(output["ReturnCode"]) != 0)
+                    return PreySenseWmiSchemaState.RuntimeFailure;
+
+                foreach (PropertyData property in output.Properties)
+                {
+                    if (property.Name.Equals("TauTimeWindow", StringComparison.OrdinalIgnoreCase) && property.Value != null)
+                        return PreySenseWmiSchemaState.Ready;
+                }
+
+                return PreySenseWmiSchemaState.Mismatched;
+            }
+            catch (ManagementException ex) when (ex.ErrorCode is ManagementStatus.NotSupported
+                or ManagementStatus.InvalidMethod
+                or ManagementStatus.InvalidObject)
+            {
+                return PreySenseWmiSchemaState.Mismatched;
+            }
+            catch (ManagementException)
+            {
+                return PreySenseWmiSchemaState.RuntimeFailure;
+            }
         }
 
         /// <summary>

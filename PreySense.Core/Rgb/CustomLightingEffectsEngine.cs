@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Threading;
@@ -203,7 +204,7 @@ namespace PreySense.Rgb
         {
             double step = 0;
             int frameCount = 0;
-            DateTime lastHwDispatch = DateTime.MinValue;
+            long lastHwDispatch = 0;
             Color[] frame = new Color[4];
 
             while (!ct.IsCancellationRequested && !_isDisposed)
@@ -301,13 +302,13 @@ namespace PreySense.Rgb
                             }
 
                             _idleDimmed = false;
-                            lastHwDispatch = DateTime.MinValue;
+                            lastHwDispatch = 0;
                             AppLogger.Log("CustomLightingEffectsEngine: backlight restored after input.");
                         }
                         else if (idleSeconds >= timeoutSeconds)
                         {
                             _idleDimmed = true;
-                            lastHwDispatch = DateTime.UtcNow;
+                            lastHwDispatch = Stopwatch.GetTimestamp();
                             _idleDimmedUtc = DateTime.UtcNow;
                             _wmi.SetZoneColors(IdleOffFrame, 0);
                             FrameUpdated?.Invoke(IdleOffFrame);
@@ -333,9 +334,10 @@ namespace PreySense.Rgb
                     }
 
                     // 2. Throttled dispatch to physical keyboard via direct ENEK5130 HID / WMI
-                    if (forceHw || (DateTime.UtcNow - lastHwDispatch).TotalMilliseconds >= hwThrottleMs)
+                    long now = Stopwatch.GetTimestamp();
+                    if (forceHw || lastHwDispatch == 0 || Stopwatch.GetElapsedTime(lastHwDispatch, now).TotalMilliseconds >= hwThrottleMs)
                     {
-                        lastHwDispatch = DateTime.UtcNow;
+                        lastHwDispatch = now;
                         _wmi.SetZoneColors(frame, brightness);
                     }
 

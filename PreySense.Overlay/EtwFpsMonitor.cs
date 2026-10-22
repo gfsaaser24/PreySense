@@ -347,13 +347,10 @@ namespace PreySense.Overlay
                 return;
             }
 
-            EnableTraceEx2(_sessionHandle, DxgiProviderId,
-                EVENT_CONTROL_CODE_ENABLE_PROVIDER,
-                TRACE_LEVEL_INFORMATION, 0, 0, 0, IntPtr.Zero);
-
-            EnableTraceEx2(_sessionHandle, DxgKrnlProviderId,
-                EVENT_CONTROL_CODE_ENABLE_PROVIDER,
-                TRACE_LEVEL_INFORMATION, DXGKRNL_KEYWORD_PRESENT, 0, 0, IntPtr.Zero);
+            // Do not briefly enable system-wide graphics events while there is no
+            // foreground target. TargetPid enables both providers with PID filters.
+            if (_targetPid != 0)
+                ApplyKernelFilters(_targetPid);
 
             _callbackRef = OnEventRecord;
             IntPtr loggerNamePtr = Marshal.StringToHGlobalUni(SessionName);
@@ -485,27 +482,6 @@ namespace PreySense.Overlay
             double elapsed = (double)(newest - oldest) / freq;
             if (elapsed <= 0) return 0;
             return (count - 1) / elapsed;
-        }
-
-        public int GetRecentFrameTimes(float[] destination)
-        {
-            int filled = _framesFilled;
-            if (filled < 2) return 0;
-
-            int n = Math.Min(destination.Length, filled - 1);
-            int head = _frameHead;
-            long freq = Stopwatch.Frequency;
-
-            for (int i = 0; i < n; i++)
-            {
-                int currIdx = (head - 1 - i + RollingWindowSize) % RollingWindowSize;
-                int prevIdx = (head - 2 - i + RollingWindowSize) % RollingWindowSize;
-                long diff = _frameTimes[currIdx] - _frameTimes[prevIdx];
-                if (diff < 0) diff = 0;
-                destination[i] = (float)((double)diff / freq * 1000.0);
-            }
-
-            return n;
         }
 
         private void LogFpsDiagnostics(long presentTick)

@@ -43,7 +43,7 @@ namespace PreySense.Frontend.ViewModels
             OnPropertyChanged(nameof(Is60HzActive));
         }
 
-        public void InitializeRefreshRates()
+        private void InitializeRefreshRates()
         {
             System.Collections.Generic.List<int>? supportedRates = null;
             int hwRate = 0;
@@ -65,9 +65,13 @@ namespace PreySense.Frontend.ViewModels
                     supportedRates = new System.Collections.Generic.List<int> { 60, 120, 240 };
 
                 _isUpdatingRefreshRateSelection = true;
-                AvailableRefreshRates.Clear();
-                foreach (int rate in supportedRates.Distinct().OrderBy(r => r))
-                    AvailableRefreshRates.Add($"{rate} Hz");
+                string[] nextRates = supportedRates.Distinct().OrderBy(r => r).Select(r => $"{r} Hz").ToArray();
+                if (!AvailableRefreshRates.SequenceEqual(nextRates))
+                {
+                    AvailableRefreshRates.Clear();
+                    foreach (string rate in nextRates)
+                        AvailableRefreshRates.Add(rate);
+                }
 
                 Is60HzSupported = supportedRates.Contains(60);
                 Is120HzSupported = supportedRates.Contains(120);

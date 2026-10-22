@@ -482,10 +482,21 @@ namespace PreySense.Frontend.ViewModels
                 ? Visibility.Visible 
                 : Visibility.Collapsed;
 
+        private OpenCoreSecurityValidator.OpenCoreIntegrationState _openCoreIntegrationState =
+            OpenCoreSecurityValidator.OpenCoreIntegrationState.NotLoaded;
+
         public string AcpiOverrideDisabledBannerText
         {
             get
             {
+                if (_openCoreIntegrationState == OpenCoreSecurityValidator.OpenCoreIntegrationState.RestartRequired)
+                {
+                    return Services.LocalizationService.Translate("Restart into the PreySense boot entry to load the installed OpenCore package.");
+                }
+                if (_openCoreIntegrationState == OpenCoreSecurityValidator.OpenCoreIntegrationState.UpdateRequired)
+                {
+                    return Services.LocalizationService.Translate("The installed OpenCore package needs to be reinstalled.");
+                }
                 if (!IsOpenCoreLoaded)
                 {
                     return Services.LocalizationService.Translate("OpenCore is not loaded. Boot via OpenCore to unlock ACPI control.");
@@ -573,9 +584,48 @@ namespace PreySense.Frontend.ViewModels
 
         public void RefreshOpenCoreStatus()
         {
-            IsOpenCoreLoaded = OpenCoreSecurityValidator.DetectIsOpenCoreLoaded();
-            AcpiOverrideStatus = Services.LocalizationService.Translate(OpenCoreSecurityValidator.GetAcpiOverrideLabel(IsOpenCoreLoaded));
+            ApplyOpenCoreIntegrationState(_openCoreIntegrationState);
             RefreshOpenCorePartition();
+        }
+
+        private void ApplyOpenCoreIntegrationState(OpenCoreSecurityValidator.OpenCoreIntegrationState state)
+        {
+            _openCoreIntegrationState = state;
+            IsOpenCoreLoaded = state == OpenCoreSecurityValidator.OpenCoreIntegrationState.Active;
+            if (!IsOpenCoreLoaded && IsAcpiOverrideEnabled)
+                IsAcpiOverrideEnabled = false;
+            AcpiOverrideStatus = Services.LocalizationService.Translate(OpenCoreSecurityValidator.GetAcpiOverrideLabel(state));
+            OnPropertyChanged(nameof(AcpiOverrideDisabledBannerText));
+        }
+
+        private void PromptOpenCoreReinstall()
+        {
+            if (_disposed)
+                return;
+
+            App.SuppressAutoHide = true;
+            bool? reinstall = false;
+            try
+            {
+                var dialog = new Views.CustomModalDialog
+                {
+                    Title = "PreySense • OpenCore",
+                    HeaderSubtitle = " • OpenCore",
+                    Message = "The installed OpenCore package is out of date. Reinstall it, then restart into the PreySense boot entry.",
+                    ConfirmText = "Reinstall OpenCore",
+                    CancelText = "Later"
+                };
+                if (System.Windows.Application.Current?.MainWindow is System.Windows.Window owner)
+                    dialog.Owner = owner;
+                reinstall = dialog.ShowDialog();
+            }
+            finally
+            {
+                App.SuppressAutoHide = false;
+            }
+
+            if (reinstall == true)
+                _ = InstallOpenCoreToEspAsync();
         }
 
         private void RefreshOpenCorePartition()
@@ -589,7 +639,7 @@ namespace PreySense.Frontend.ViewModels
 
         public void RefreshLocalizedText()
         {
-            AcpiOverrideStatus = Services.LocalizationService.Translate(OpenCoreSecurityValidator.GetAcpiOverrideLabel(IsOpenCoreLoaded));
+            AcpiOverrideStatus = Services.LocalizationService.Translate(OpenCoreSecurityValidator.GetAcpiOverrideLabel(_openCoreIntegrationState));
             OnPropertyChanged(nameof(AcpiOverrideDisabledBannerText));
         }
 
@@ -664,7 +714,8 @@ namespace PreySense.Frontend.ViewModels
                 ["PreySense.OpenCore.OC.OpenCore.efi"] = Path.Combine("EFI", "OC", "OpenCore.efi"),
                 ["PreySense.OpenCore.OC.Drivers.OpenRuntime.efi"] = Path.Combine("EFI", "OC", "Drivers", "OpenRuntime.efi"),
                 ["PreySense.OpenCore.Install-To-ESP.ps1"] = "Install-To-ESP.ps1",
-                ["PreySense.OpenCore.Uninstall-From-ESP.ps1"] = "Uninstall-From-ESP.ps1"
+                ["PreySense.OpenCore.Uninstall-From-ESP.ps1"] = "Uninstall-From-ESP.ps1",
+                ["PreySense.OpenCore.Repair-PreySenseWmi.ps1"] = "Repair-PreySenseWmi.ps1"
             };
 
             foreach ((string resourceName, string relativePath) in resources)

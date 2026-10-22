@@ -1,8 +1,10 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Win32;
 using PreySense.Core.Acpi;
+using PreySense.Core.Hardware;
 using PreySense.Frontend.Services;
 using PreySense.Helpers;
 using PreySense.Mode;
@@ -108,6 +110,69 @@ namespace PreySense.Frontend.ViewModels
             SaveCustomFanSpeeds();
         }
 
+        private async Task ValidateOpenCoreIntegrationAsync()
+        {
+            if (_disposed)
+                return;
+
+            OpenCoreSecurityValidator.OpenCoreIntegrationState state = OpenCoreSecurityValidator.OpenCoreIntegrationState.NotLoaded;
+            string detail = string.Empty;
+            bool partitionPresent = false;
+            await Task.Run(() =>
+            {
+                try
+                {
+                    string mofPath = Path.Combine(Path.GetTempPath(), "preysense.mof");
+                    File.WriteAllBytes(mofPath, ReadEmbeddedAcpiPayload("PreySense.ACPI.preysense.mof"));
+                    bool knownVersion = PreySenseWmiRepair.TryParseInterfaceVersion(File.ReadAllText(mofPath), out uint expected);
+                    bool loaded = OpenCoreSecurityValidator.TryGetPreyDevOemRevision(out uint loadedRevision);
+                    bool loadedMatches = knownVersion && loaded && loadedRevision == expected;
+
+                    bool wmiReady = false;
+                    if (loadedMatches)
+                        wmiReady = PreySenseWmiRepair.TryRegister(mofPath, out detail);
+
+                    bool installedCurrent = PreySenseWmiRepair.IsPending();
+                    if (!installedCurrent && knownVersion &&
+                        OpenCoreSecurityValidator.TryReadInstalledPreyDevRevision(out uint installedRevision))
+                    {
+                        installedCurrent = installedRevision == expected;
+                    }
+
+                    try { partitionPresent = OpenCoreSecurityValidator.IsPreySensePartitionPresent(); } catch { }
+                    bool integrationPresent = partitionPresent || loaded || installedCurrent;
+                    state = OpenCoreSecurityValidator.DecideIntegrationState(loadedMatches, wmiReady, installedCurrent, integrationPresent);
+                }
+                catch (Exception ex)
+                {
+                    detail = ex.Message;
+                }
+            });
+
+            if (_disposed)
+                return;
+
+            await _dispatcher.InvokeAsync(() =>
+            {
+                if (_disposed)
+                    return;
+
+                IsOpenCorePartitionPresent = partitionPresent;
+                ApplyOpenCoreIntegrationState(state);
+                if (state == OpenCoreSecurityValidator.OpenCoreIntegrationState.RestartRequired)
+                    StatusMessage = "Restart Required";
+                else if (state != OpenCoreSecurityValidator.OpenCoreIntegrationState.Active &&
+                         !string.IsNullOrWhiteSpace(detail))
+                    StatusMessage = detail;
+                else if (state == OpenCoreSecurityValidator.OpenCoreIntegrationState.Active &&
+                         !string.IsNullOrWhiteSpace(detail))
+                    StatusMessage = detail;
+            });
+
+            if (state == OpenCoreSecurityValidator.OpenCoreIntegrationState.UpdateRequired && !_disposed)
+                await _dispatcher.InvokeAsync(PromptOpenCoreReinstall, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        }
+
         private async Task InitializeSessionAsync()
         {
             await RestoreSessionSettingsAsync("startup");
@@ -116,8 +181,6 @@ namespace PreySense.Frontend.ViewModels
 
             int batteryLimit = IsBatteryLimitEnabled ? 1 : 0;
             int usbLevel = UsbChargingPercent;
-            bool openCore = false;
-            bool partitionPresent = false;
 
             await Task.Run(() =>
             {
@@ -128,8 +191,6 @@ namespace PreySense.Frontend.ViewModels
                         usbLevel = _hw.GetUsbChargingLevel();
                 }
                 catch { }
-                try { openCore = OpenCoreSecurityValidator.DetectIsOpenCoreLoaded(); } catch { }
-                try { partitionPresent = OpenCoreSecurityValidator.IsPreySensePartitionPresent(); } catch { }
             });
 
             if (_disposed)
@@ -143,12 +204,9 @@ namespace PreySense.Frontend.ViewModels
                 IsBatteryLimitEnabled = batteryLimit == 1;
                 if (UsbChargingPercent == 0 && usbLevel is 10 or 20 or 30)
                     UsbChargingPercent = usbLevel;
-                IsOpenCoreLoaded = openCore;
-                IsOpenCorePartitionPresent = partitionPresent;
-                if (!openCore)
-                    IsAcpiOverrideEnabled = false;
-                AcpiOverrideStatus = OpenCoreSecurityValidator.GetAcpiOverrideLabel(openCore);
             });
+
+            await ValidateOpenCoreIntegrationAsync();
         }
 
         public async Task RestoreSessionSettingsAsync(string reason)

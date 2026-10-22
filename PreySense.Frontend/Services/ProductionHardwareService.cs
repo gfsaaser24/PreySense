@@ -16,7 +16,11 @@ namespace PreySense.Frontend.Services
         private readonly Lazy<EnekRgbClient> _enek;
         private readonly Lazy<CustomLightingEffectsEngine> _lightingEngine;
         private readonly PdhCpuPowerMonitor _powerMonitor;
+        private readonly object _telemetryLock = new();
+        private HardwareTelemetry _cachedTelemetry;
+        private long _cachedTelemetryTick;
         private int _kbdTimeoutSeconds;
+        private bool? _isBiosDiscreteGpuActive;
 
         public event EventHandler<byte>? PowerModeChanged;
 
@@ -51,15 +55,20 @@ namespace PreySense.Frontend.Services
 
         public HardwareTelemetry GetCurrentTelemetry()
         {
+            lock (_telemetryLock)
+            {
+                long now = Environment.TickCount64;
+                if (_cachedTelemetryTick != 0 && now - _cachedTelemetryTick < 750)
+                    return _cachedTelemetry;
+
             int cpuTemp = _wmi.CpuTemp;
             int gpuTemp = _wmi.GpuTemp;
             int cpuRpm = _wmi.CpuFanRpm;
             int gpuRpm = _wmi.GpuFanRpm;
-            _wmi.TryGetAcConnected(out bool onAc);
-            float batteryPercent = _wmi.GetBatteryPercent();
+            _wmi.TryGetPowerStatus(out bool onAc, out float batteryPercent);
             float pkgPower = _powerMonitor.GetPackagePowerWatts();
 
-            var telemetry = new HardwareTelemetry(
+            _cachedTelemetry = new HardwareTelemetry(
                 CpuTemp: cpuTemp,
                 GpuTemp: gpuTemp,
                 CpuRpm: cpuRpm,
@@ -71,7 +80,9 @@ namespace PreySense.Frontend.Services
                 BatteryDischargeRateMw: 0,
                 CpuPkgPowerWatts: pkgPower
             );
-            return telemetry;
+                _cachedTelemetryTick = now;
+                return _cachedTelemetry;
+            }
         }
 
         public bool SetPowerMode(byte mode)
@@ -118,11 +129,13 @@ namespace PreySense.Frontend.Services
         {
             get
             {
+                if (_isBiosDiscreteGpuActive.HasValue)
+                    return _isBiosDiscreteGpuActive.Value;
                 // When booted in Hardware BIOS Discrete GPU mode, the integrated GPU is disabled at POST
                 // and is not enumerated as a present display device in Windows.
                 bool hasIntegrated = DeviceHelper.HasPresentDisplayDevice("VEN_8086") || DeviceHelper.HasPresentDisplayDevice("VEN_1002");
                 bool hasDiscrete = DeviceHelper.HasPresentDisplayDevice("VEN_10DE");
-                return !hasIntegrated && hasDiscrete;
+                return (_isBiosDiscreteGpuActive = !hasIntegrated && hasDiscrete).Value;
             }
         }
 
