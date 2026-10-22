@@ -87,13 +87,6 @@ namespace PreySense.Overlay
             SyncRunningState();
         }
 
-        public static void ApplyPollInterval()
-        {
-            if (_overlay == null || !_overlay.IsActive)
-                return;
-            _overlay.ApplyPollInterval();
-        }
-
         public static void Reposition(string horizontal, string vertical)
         {
             AppConfig.Set("overlay_pos_horizontal", horizontal);

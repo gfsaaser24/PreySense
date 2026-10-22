@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using System.Threading;
 
 namespace PreySense.Frontend.Services
 {
@@ -21,6 +22,9 @@ namespace PreySense.Frontend.Services
         private readonly Action<int>? _onBrightnessDelta;
         private readonly LowLevelKeyboardProc _proc;
         private IntPtr _hookId = IntPtr.Zero;
+        private Thread? _hookThread;
+        private uint _hookThreadId;
+        private readonly ManualResetEventSlim _hookReady = new(false);
         private bool _isDisposed;
 
         private bool _isPredatorKeyPressed;
@@ -44,7 +48,38 @@ namespace PreySense.Frontend.Services
             _onModeKeyPressed = onModeKeyPressed;
             _onBrightnessDelta = onBrightnessDelta;
             _proc = HookCallback;
-            _hookId = SetHook(_proc);
+            _hookThread = new Thread(HookThreadMain)
+            {
+                IsBackground = true,
+                Name = "PreySenseKeyboardHook"
+            };
+            _hookThread.Start();
+            _hookReady.Wait(TimeSpan.FromSeconds(2));
+        }
+
+        private void HookThreadMain()
+        {
+            _hookThreadId = GetCurrentThreadId();
+            try
+            {
+                _hookId = SetHook(_proc);
+            }
+            catch
+            {
+            }
+
+            _hookReady.Set();
+            while (GetMessage(out MSG msg, IntPtr.Zero, 0, 0) > 0)
+            {
+                TranslateMessage(ref msg);
+                DispatchMessage(ref msg);
+            }
+
+            if (_hookId != IntPtr.Zero)
+            {
+                UnhookWindowsHookEx(_hookId);
+                _hookId = IntPtr.Zero;
+            }
         }
 
         private IntPtr SetHook(LowLevelKeyboardProc proc)
@@ -255,6 +290,35 @@ namespace PreySense.Frontend.Services
         [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         private static extern IntPtr GetModuleHandle(string lpModuleName);
 
+        [DllImport("kernel32.dll")]
+        private static extern uint GetCurrentThreadId();
+
+        [DllImport("user32.dll")]
+        private static extern bool PostThreadMessage(uint idThread, uint msg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern int GetMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+
+        [DllImport("user32.dll")]
+        private static extern bool TranslateMessage(ref MSG lpMsg);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr DispatchMessage(ref MSG lpMsg);
+
+        private const uint WM_QUIT = 0x0012;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MSG
+        {
+            public IntPtr hwnd;
+            public uint message;
+            public IntPtr wParam;
+            public IntPtr lParam;
+            public uint time;
+            public int x;
+            public int y;
+        }
+
         #endregion
 
         public void Dispose()
@@ -262,11 +326,11 @@ namespace PreySense.Frontend.Services
             if (_isDisposed) return;
             _isDisposed = true;
 
-            if (_hookId != IntPtr.Zero)
-            {
-                UnhookWindowsHookEx(_hookId);
-                _hookId = IntPtr.Zero;
-            }
+            if (_hookThreadId != 0)
+                PostThreadMessage(_hookThreadId, WM_QUIT, IntPtr.Zero, IntPtr.Zero);
+
+            _hookThread?.Join(TimeSpan.FromSeconds(1));
+            _hookReady.Dispose();
         }
     }
 }

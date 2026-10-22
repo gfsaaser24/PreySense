@@ -36,9 +36,13 @@ namespace PreySense.Gpu
         private enum GpuState { Active, Asleep, Off }
 
         private GpuState _lastState = GpuState.Off;
+        private PerformanceStateId _lastPerfState = PerformanceStateId.Undefined;
         private long _lastStateTime = -StateCacheMs;
         private const int StateCacheMs = 500;
         private const int InactiveStateCacheMs = 5_000;
+        private const int InUseCacheMs = 1000;
+        private bool _lastInUse;
+        private long _lastInUseTime = -InUseCacheMs;
 
         private GpuState GetGpuState()
         {
@@ -49,6 +53,7 @@ namespace PreySense.Gpu
             {
                 var perfState = GPUApi.GetCurrentPerformanceState(_internalGpu!.Handle);
                 if (verboseLog) AppLogger.Log($"GPU: {perfState}");
+                _lastPerfState = perfState;
                 _lastState = GpuState.Active;
             }
             catch (Exception ex)
@@ -58,6 +63,57 @@ namespace PreySense.Gpu
             }
             _lastStateTime = Environment.TickCount64;
             return _lastState;
+        }
+
+        /// <summary>
+        /// True when something other than this process is using the discrete GPU.
+        /// A powered-off or idle GPU is left in D3/RTD3: NVML is released and not opened.
+        /// </summary>
+        public bool IsDiscreteGpuInUse()
+        {
+            if (Environment.TickCount64 - _lastInUseTime < InUseCacheMs)
+                return _lastInUse;
+
+            bool inUse = GetGpuState() == GpuState.Active
+                && (!IsIdlePerformanceState(_lastPerfState) || HasUserGpuClient());
+            if (!inUse)
+                NvmlHelper.Shutdown();
+
+            _lastInUse = inUse;
+            _lastInUseTime = Environment.TickCount64;
+            return inUse;
+        }
+
+        private static bool IsIdlePerformanceState(PerformanceStateId state)
+            => state is >= PerformanceStateId.P8_HDVideoPlayback and <= PerformanceStateId.Undefined;
+
+        private bool HasUserGpuClient()
+        {
+            if (!IsValid || _internalGpu is null) return false;
+            int currentPid = Process.GetCurrentProcess().Id;
+            try
+            {
+                Process[] processes = _internalGpu.GetActiveApplications();
+                bool found = false;
+                foreach (Process process in processes)
+                {
+                    try
+                    {
+                        if (!found
+                            && process.Id != currentPid
+                            && process.SessionId != 0
+                            && !_systemProcessNames.Contains(process.ProcessName))
+                            found = true;
+                    }
+                    catch { }
+                    finally { process.Dispose(); }
+                }
+                return found;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         public int? ReadCurrentTemperature(bool log = false, bool forceWake = false)

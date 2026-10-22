@@ -26,6 +26,8 @@ namespace PreySense.Frontend.ViewModels
         private int _pendingBrightnessDelta;
         private int _telemetryPollInProgress;
         private bool _telemetryPollingActive;
+        private bool _hasPushedTelemetry;
+        private HardwareTelemetry _lastPolledTelemetry;
         private bool _disposed;
         private int? _gpuModeDeferredForBattery;
 
@@ -103,14 +105,27 @@ namespace PreySense.Frontend.ViewModels
                 if (savedServicesDebloated.HasValue)
                 {
                     IsAcerServicesDebloated = savedServicesDebloated.Value;
+                    DebloaterStatusText = IsAcerServicesDebloated
+                        ? "Acer OEM Services: Stopped & Disabled (~400MB Saved)"
+                        : "Acer OEM Services: Active";
                 }
                 else
                 {
-                    IsAcerServicesDebloated = AcerServiceDebloater.AreAllServicesDisabled();
+                    DebloaterStatusText = "Acer OEM Services: Active";
+                    _ = Task.Run(() =>
+                    {
+                        bool disabled = AcerServiceDebloater.AreAllServicesDisabled();
+                        _dispatcher.InvokeAsync(() =>
+                        {
+                            if (_disposed)
+                                return;
+                            IsAcerServicesDebloated = disabled;
+                            DebloaterStatusText = disabled
+                                ? "Acer OEM Services: Stopped & Disabled (~400MB Saved)"
+                                : "Acer OEM Services: Active";
+                        });
+                    });
                 }
-                DebloaterStatusText = IsAcerServicesDebloated
-                    ? "Acer OEM Services: Stopped & Disabled (~400MB Saved)"
-                    : "Acer OEM Services: Active";
             }
             catch
             {
@@ -225,13 +240,27 @@ namespace PreySense.Frontend.ViewModels
 
         private void PollTelemetry()
         {
-            if (_disposed || !_telemetryPollingActive || Interlocked.Exchange(ref _telemetryPollInProgress, 1) != 0)
+            if (_disposed || !_telemetryPollingActive)
+                return;
+
+            if (_dispatcher.CheckAccess())
+            {
+                Task.Run(PollTelemetry);
+                return;
+            }
+
+            if (Interlocked.Exchange(ref _telemetryPollInProgress, 1) != 0)
                 return;
 
             try
             {
                 var telemetry = _hw.GetCurrentTelemetry();
-                App.Current?.Dispatcher?.InvokeAsync(() =>
+                if (_hasPushedTelemetry && telemetry.Equals(_lastPolledTelemetry))
+                    return;
+
+                _lastPolledTelemetry = telemetry;
+                _hasPushedTelemetry = true;
+                _dispatcher.InvokeAsync(() =>
                 {
                     if (!_disposed)
                         UpdateTelemetry(telemetry);

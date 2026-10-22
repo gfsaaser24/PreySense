@@ -77,6 +77,7 @@ namespace PreySense.Overlay
         private int? _ramUsedMb;
         private const int HistoryLength = 60;
         private int _historyHead = 0;
+        private int _lastIdlePaintStamp = int.MinValue;
         private readonly float[] _cpuUsageHistory = new float[HistoryLength];
         private readonly float[] _gpuUsageHistory = new float[HistoryLength];
         private readonly float[] _cpuTempHistory = new float[HistoryLength];
@@ -97,7 +98,8 @@ namespace PreySense.Overlay
 
         private const int FpsShowDelayMs = 3000;
         private const int FpsPositiveShowDelayMs = 3000;
-        private readonly System.Timers.Timer _timer = new(AppConfig.OverlayUpdateIntervalDefaultMs) { AutoReset = true };
+        private const int PollIntervalMs = 1000;
+        private readonly System.Timers.Timer _timer = new(PollIntervalMs) { AutoReset = true };
         private int _tickRunning;
         private EtwFpsMonitor? _fps;
         private volatile int _currentFps = -1;
@@ -474,6 +476,34 @@ namespace PreySense.Overlay
             _vramSpeedHistory[_historyHead] = (trackMemSpeed && gpuActive) ? (HardwareControl.vramSpeedMhz ?? 0) : 0f;
 
             _historyHead = (_historyHead + 1) % HistoryLength;
+
+            bool anyGraph = trackUsage || trackTemp || trackClock || trackPower || trackMemory || trackFan || trackVoltage || trackMemSpeed;
+            if (anyGraph)
+            {
+                _lastIdlePaintStamp = int.MinValue;
+            }
+            else
+            {
+                int stamp = HashCode.Combine(
+                    HardwareControl.cpuTemp,
+                    HardwareControl.gpuTemp,
+                    HardwareControl.cpuUsage,
+                    HardwareControl.gpuUsage,
+                    HardwareControl.cpuMhz,
+                    HardwareControl.gpuMhz,
+                    HardwareControl.cpuPower,
+                    HardwareControl.gpuPower);
+                stamp = HashCode.Combine(
+                    stamp,
+                    HardwareControl.cpuFanRPM,
+                    HardwareControl.gpuFanRPM,
+                    HardwareControl.ramUsage,
+                    HardwareControl.vramUsage,
+                    _currentFps);
+                if (stamp == _lastIdlePaintStamp)
+                    return;
+                _lastIdlePaintStamp = stamp;
+            }
 
             Invalidate();
         }
@@ -1007,18 +1037,7 @@ namespace PreySense.Overlay
             _bgBrush?.Dispose();      _bgBrush = new SolidBrush(Color.FromArgb(_bgAlpha, 0, 0, 0));
         }
 
-        public void ApplyPollInterval()
-        {
-            double ms = AppConfig.GetOverlayUpdateIntervalMs();
-            bool running = _timer.Enabled;
-            if (running)
-                _timer.Stop();
-            _timer.Interval = ms;
-            if (running && _active)
-                _timer.Start();
-        }
-
-        /// <summary>Called by MetricsSettingsForm / MetricsWindow when the user changes settings while overlay is running.</summary>
+        /// <summary>Called by MetricsWindow when the user changes settings while the overlay is running.</summary>
         public void RefreshDisplayFlags()
         {
             LoadDisplayConfiguration();
@@ -1053,7 +1072,6 @@ namespace PreySense.Overlay
             }
 
             ApplyColors();
-            ApplyPollInterval();
             EnsureFpsMonitor();
 
             if (_active)
@@ -1171,7 +1189,7 @@ namespace PreySense.Overlay
                 Invalidate();
             }
             RestorePosition();
-            ApplyPollInterval();
+            _timer.Interval = PollIntervalMs;
             _timer.Start();
             EnsureFpsMonitor();
             _ = Task.Run(() =>

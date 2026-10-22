@@ -21,7 +21,6 @@ namespace PreySense.Frontend.Views
         private bool _isInitializing = true;
         private readonly UiDebouncer _hudScaleDebouncer = new(TimeSpan.FromMilliseconds(100));
         private readonly UiDebouncer _opacityDebouncer = new(TimeSpan.FromMilliseconds(100));
-        private readonly UiDebouncer _intervalDebouncer = new(TimeSpan.FromMilliseconds(100));
 
         public MetricsWindow()
         {
@@ -35,7 +34,6 @@ namespace PreySense.Frontend.Views
                 OverlayBridge.EnabledChanged -= OnOverlayEnabledChanged;
                 _hudScaleDebouncer.Dispose();
                 _opacityDebouncer.Dispose();
-                _intervalDebouncer.Dispose();
             };
         }
 
@@ -149,9 +147,6 @@ namespace PreySense.Frontend.Views
 
             LabelHudScale.Text = $"{scale}%";
             LabelOpacity.Text = $"{opacityPercent}%";
-            double intervalSeconds = AppConfig.GetOverlayUpdateIntervalMs() / 1000.0;
-            SliderUpdateInterval.Value = intervalSeconds;
-            SliderUpdateInterval.ValueText = FormatInterval(intervalSeconds);
 
             DropdownHorizontalPos.ItemsSource = HorizontalPositions;
             DropdownVerticalPos.ItemsSource = VerticalPositions;
@@ -356,42 +351,6 @@ namespace PreySense.Frontend.Views
             int value = (int)Math.Round(SliderOpacity.Value / 10.0) * 10;
             SetRegInt("overlay_alpha", value);
             HardwareOverlayManager.RefreshDisplayFlags();
-        }
-
-        private void SliderUpdateInterval_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-        {
-            if (SliderUpdateInterval == null)
-                return;
-
-            double seconds = SnapIntervalSeconds(SliderUpdateInterval.Value);
-            if (Math.Abs(SliderUpdateInterval.Value - seconds) > 0.001)
-                SliderUpdateInterval.Value = seconds;
-
-            SliderUpdateInterval.ValueText = FormatInterval(seconds);
-            if (!_isInitializing)
-                _intervalDebouncer.Debounce(SaveUpdateInterval);
-        }
-
-        private void SaveUpdateInterval()
-        {
-            double seconds = SnapIntervalSeconds(SliderUpdateInterval.Value);
-            int ms = AppConfig.SnapOverlayUpdateIntervalMs((int)Math.Round(seconds * 1000.0));
-            SliderUpdateInterval.Value = ms / 1000.0;
-            SliderUpdateInterval.ValueText = FormatInterval(ms / 1000.0);
-            SetRegInt(AppConfig.OverlayUpdateIntervalMsKey, ms);
-            HardwareOverlayManager.ApplyPollInterval();
-        }
-
-        private static double SnapIntervalSeconds(double seconds)
-        {
-            double step = AppConfig.OverlayUpdateIntervalStepMs / 1000.0;
-            double snapped = Math.Round(seconds / step) * step;
-            return Math.Clamp(snapped, AppConfig.OverlayUpdateIntervalMinSeconds, AppConfig.OverlayUpdateIntervalMaxSeconds);
-        }
-
-        private static string FormatInterval(double seconds)
-        {
-            return $"{seconds:0.00}s";
         }
 
     }

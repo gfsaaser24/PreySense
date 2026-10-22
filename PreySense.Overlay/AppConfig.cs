@@ -89,25 +89,6 @@ namespace PreySense.Overlay
             return IsOverlay() || IsOverlayGameOnly();
         }
 
-        public const string OverlayUpdateIntervalMsKey = "overlay_update_interval_ms";
-        public const int OverlayUpdateIntervalMinMs = 250;
-        public const int OverlayUpdateIntervalMaxMs = 3000;
-        public const int OverlayUpdateIntervalDefaultMs = 1000;
-        public const int OverlayUpdateIntervalStepMs = 250;
-        public const double OverlayUpdateIntervalMinSeconds = 0.25;
-        public const double OverlayUpdateIntervalMaxSeconds = 3;
-
-        public static int GetOverlayUpdateIntervalMs()
-        {
-            return SnapOverlayUpdateIntervalMs(Get(OverlayUpdateIntervalMsKey, OverlayUpdateIntervalDefaultMs));
-        }
-
-        public static int SnapOverlayUpdateIntervalMs(int milliseconds)
-        {
-            int snapped = (int)Math.Round(milliseconds / (double)OverlayUpdateIntervalStepMs) * OverlayUpdateIntervalStepMs;
-            return Math.Clamp(snapped, OverlayUpdateIntervalMinMs, OverlayUpdateIntervalMaxMs);
-        }
-
         public static string DefaultOverlayColumn(int oneBasedIndex) => oneBasedIndex switch
         {
             1 => "Usage",

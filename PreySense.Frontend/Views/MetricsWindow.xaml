@@ -95,17 +95,6 @@
                             </StackPanel>
                         </Grid>
 
-                        <controls:SettingSliderRow x:Name="SliderUpdateInterval"
-                                                   Title="Update Interval"
-                                                   Minimum="0.25"
-                                                   Maximum="3"
-                                                   Value="1"
-                                                   SmallChange="0.25"
-                                                   TickFrequency="0.25"
-                                                   IsSnapToTickEnabled="True"
-                                                   ValueText="1.00s"
-                                                   ValueChanged="SliderUpdateInterval_ValueChanged"/>
-
                         <Separator Margin="0,4,0,8"/>
 
                         <!-- Horizontal Position -->

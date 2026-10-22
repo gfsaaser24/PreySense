@@ -15,7 +15,7 @@ namespace PreySense.Frontend.Services
         private readonly Lazy<NvidiaGpuControl> _gpu;
         private readonly Lazy<EnekRgbClient> _enek;
         private readonly Lazy<CustomLightingEffectsEngine> _lightingEngine;
-        private readonly PdhCpuPowerMonitor _powerMonitor;
+        private readonly Lazy<PdhCpuPowerMonitor> _powerMonitor;
         private readonly object _telemetryLock = new();
         private HardwareTelemetry _cachedTelemetry;
         private long _cachedTelemetryTick;
@@ -50,7 +50,7 @@ namespace PreySense.Frontend.Services
                 engine.SetIdleTimeoutSeconds(_kbdTimeoutSeconds);
                 return engine;
             }, true);
-            _powerMonitor = new PdhCpuPowerMonitor();
+            _powerMonitor = new Lazy<PdhCpuPowerMonitor>(() => new PdhCpuPowerMonitor(), true);
         }
 
         public HardwareTelemetry GetCurrentTelemetry()
@@ -61,12 +61,13 @@ namespace PreySense.Frontend.Services
                 if (_cachedTelemetryTick != 0 && now - _cachedTelemetryTick < 750)
                     return _cachedTelemetry;
 
-            int cpuTemp = _wmi.CpuTemp;
-            int gpuTemp = _wmi.GpuTemp;
-            int cpuRpm = _wmi.CpuFanRpm;
-            int gpuRpm = _wmi.GpuFanRpm;
+            var thermal = _wmi.ReadThermalSensors();
+            int cpuTemp = thermal.CpuTemp;
+            int gpuTemp = thermal.GpuTemp;
+            int cpuRpm = thermal.CpuRpm;
+            int gpuRpm = thermal.GpuRpm;
             _wmi.TryGetPowerStatus(out bool onAc, out float batteryPercent);
-            float pkgPower = _powerMonitor.GetPackagePowerWatts();
+            float pkgPower = _powerMonitor.Value.GetPackagePowerWatts();
 
             _cachedTelemetry = new HardwareTelemetry(
                 CpuTemp: cpuTemp,
@@ -288,7 +289,8 @@ namespace PreySense.Frontend.Services
         {
             if (_lightingEngine.IsValueCreated)
                 _lightingEngine.Value.Dispose();
-            _powerMonitor.Dispose();
+            if (_powerMonitor.IsValueCreated)
+                _powerMonitor.Value.Dispose();
             if (_enek.IsValueCreated)
                 _enek.Value.Dispose();
             _wmi.Dispose();

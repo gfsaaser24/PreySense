@@ -313,57 +313,98 @@ namespace PreySense.Overlay
 
         public static void ReadSensorsOverlay()
         {
-            cpuMhz = GetCpuMhz(); // Call early to update LHM and populate cpuVoltage and _lhmCpuTemp
-
             var wmi = WmiProvider?.Invoke() ?? (_fallbackWmi ??= new WmiController());
+            var nvidia = GpuControl as NvidiaGpuControl;
+            // NVML init wakes a dGPU in D3/RTD3 and holds it there. Skip it unless the GPU is already in use.
+            bool gpuInUse = nvidia is null || nvidia.IsDiscreteGpuInUse();
 
             long now = Environment.TickCount64;
-            if (_lastSlowSensorTick == 0 || now - _lastSlowSensorTick >= SlowSensorIntervalMs)
+            bool slowSensors = _lastSlowSensorTick == 0 || now - _lastSlowSensorTick >= SlowSensorIntervalMs;
+            if (slowSensors)
             {
                 _lastSlowSensorTick = now;
-                cpuFanRPM = wmi?.CpuFanRpm;
-                gpuFanRPM = wmi?.GpuFanRpm;
+                cpuMhz = GetCpuMhz();
+                if (wmi != null)
+                {
+                    var thermal = wmi.ReadThermalSensors();
+                    cpuFanRPM = thermal.CpuRpm;
+                    gpuFanRPM = thermal.GpuRpm;
+                    cpuTemp = thermal.CpuTemp;
+                    if (gpuInUse)
+                        gpuTemp = thermal.GpuTemp;
+                }
+                else
+                {
+                    cpuFanRPM = null;
+                    gpuFanRPM = null;
+                    cpuTemp = -1;
+                }
 
-                cpuTemp = wmi?.CpuTemp ?? -1;
                 if (cpuTemp <= 0 && _lhmCpuTemp.HasValue && _lhmCpuTemp.Value > 0)
                     cpuTemp = _lhmCpuTemp.Value;
-                gpuTemp = wmi?.GpuTemp ?? -1;
 
-                int? liveGpuTemp = NvmlHelper.GetGpuTemperature();
-                if (liveGpuTemp is null or <= 0)
+                if (!gpuInUse)
                 {
-                    try { liveGpuTemp = (GpuControl as NvidiaGpuControl)?.ReadCurrentTemperature(); }
-                    catch { liveGpuTemp = null; }
+                    int? idleTemp = null;
+                    try { idleTemp = nvidia?.ReadCurrentTemperature(); }
+                    catch { idleTemp = null; }
+                    gpuTemp = idleTemp is > 0 ? idleTemp.Value : 0;
                 }
-                if (liveGpuTemp is > 0)
-                    gpuTemp = liveGpuTemp.Value;
+                else
+                {
+                    if (wmi == null)
+                        gpuTemp = -1;
+
+                    int? liveGpuTemp = NvmlHelper.GetGpuTemperature();
+                    if (liveGpuTemp is null or <= 0)
+                    {
+                        try { liveGpuTemp = nvidia?.ReadCurrentTemperature(); }
+                        catch { liveGpuTemp = null; }
+                    }
+                    if (liveGpuTemp is > 0)
+                        gpuTemp = liveGpuTemp.Value;
+                }
             }
 
             cpuUsage = GetCPUUsage();
-            try { gpuUsage = GpuControl?.GetGpuUse(); } catch { gpuUsage = null; }
 
             var ram = GetRAMInfo();
             ramUsage = ram?.percent;
             ramUsedMb = ram?.usedMb;
 
-            try
+            if (!gpuInUse)
             {
-                if (GpuControl?.GetVramInfo() is { } v && v.totalMb > 0)
-                {
-                    vramUsedMb = (int)v.usedMb;
-                    vramUsage = (int)Math.Clamp(v.usedMb * 100 / v.totalMb, 0, 100);
-                }
-                else { vramUsedMb = null; vramUsage = null; }
+                gpuUsage = null;
+                vramUsedMb = null;
+                vramUsage = null;
+                gpuPower = 0;
+                gpuMhz = null;
+                vramSpeedMhz = null;
+                gpuVoltage = null;
             }
-            catch { vramUsedMb = null; vramUsage = null; }
+            else
+            {
+                try { gpuUsage = GpuControl?.GetGpuUse(); } catch { gpuUsage = null; }
+
+                try
+                {
+                    if (GpuControl?.GetVramInfo() is { } v && v.totalMb > 0)
+                    {
+                        vramUsedMb = (int)v.usedMb;
+                        vramUsage = (int)Math.Clamp(v.usedMb * 100 / v.totalMb, 0, 100);
+                    }
+                    else { vramUsedMb = null; vramUsage = null; }
+                }
+                catch { vramUsedMb = null; vramUsage = null; }
+
+                gpuPower = GetGPUPower() ?? gpuPower;
+                try { gpuMhz = GpuControl?.GetGpuClock(); } catch { gpuMhz = null; }
+                try { vramSpeedMhz = GpuControl?.GetGpuMemoryClock(); } catch { vramSpeedMhz = null; }
+                try { gpuVoltage = GpuControl?.GetGpuVoltage(); } catch { gpuVoltage = null; }
+            }
 
             cpuPower = GetCPUPower();
-            gpuPower = GetGPUPower() ?? gpuPower;
-            try { gpuMhz = GpuControl?.GetGpuClock(); } catch { gpuMhz = null; }
-            
             ramSpeedMhz = GetRamSpeed();
-            try { vramSpeedMhz = GpuControl?.GetGpuMemoryClock(); } catch { vramSpeedMhz = null; }
-            try { gpuVoltage = GpuControl?.GetGpuVoltage(); } catch { gpuVoltage = null; }
         }
 
         private static int? _cachedRamSpeed;

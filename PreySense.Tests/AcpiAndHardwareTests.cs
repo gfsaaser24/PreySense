@@ -660,6 +660,10 @@ namespace PreySense.Tests
             Assert.DoesNotContain("cpuPower = null", hardware);
             Assert.Contains("_lhmCpuClock > 0", hardware);
             Assert.Contains("TrySampleFrequencies", hardware);
+            Assert.Contains("IsDiscreteGpuInUse()", hardware);
+            int gpuGate = hardware.IndexOf("IsDiscreteGpuInUse()", StringComparison.Ordinal);
+            int nvmlTemp = hardware.IndexOf("NvmlHelper.GetGpuTemperature", StringComparison.Ordinal);
+            Assert.IsTrue(gpuGate >= 0 && nvmlTemp > gpuGate, "Overlay must check that the dGPU is in use before opening NVML.");
             Assert.Contains("NvmlHelper.GetGpuTemperature", hardware);
             Assert.Contains("ReadCurrentTemperature", hardware);
             Assert.DoesNotContain("GpuControl.GetCurrentTemperature()", hardware);
@@ -1397,8 +1401,8 @@ namespace PreySense.Tests
 
             Assert.AreEqual("Memory Speed", PreySense.Overlay.AppConfig.DefaultOverlayColumn(7));
             Assert.AreEqual("Fan Speed", PreySense.Overlay.AppConfig.DefaultOverlayColumn(8));
-            Assert.Contains("OverlayUpdateIntervalDefaultMs", overlay);
-            Assert.Contains("ApplyPollInterval", overlay);
+            Assert.Contains("PollIntervalMs = 1000", overlay);
+            Assert.DoesNotContain("ApplyPollInterval", overlay);
             Assert.Contains("VisibleTelemetryIntervalMs = 1000", vm);
             Assert.DoesNotContain("HiddenTelemetryIntervalMs", vm);
             string session = File.ReadAllText(Path.Combine(root, "PreySense.Frontend", "ViewModels", "MainViewModel.Session.cs"));
@@ -1511,21 +1515,14 @@ namespace PreySense.Tests
             Assert.DoesNotContain("Content=\"Reset\"", metricsXaml);
             Assert.DoesNotContain("ResetButton_Click", metricsXaml);
             Assert.Contains("GameOnly_Changed", metricsXaml);
-            Assert.Contains("Title=\"Update Interval\"", metricsXaml);
-            Assert.Contains("SliderUpdateInterval", metricsXaml);
-            Assert.Contains("Minimum=\"0.25\"", metricsXaml);
-            Assert.Contains("Maximum=\"3\"", metricsXaml);
-            Assert.Contains("TickFrequency=\"0.25\"", metricsXaml);
-            Assert.Contains("ApplyPollInterval", metricsUi);
+            Assert.DoesNotContain("Title=\"Update Interval\"", metricsXaml);
+            Assert.DoesNotContain("SliderUpdateInterval", metricsXaml);
+            Assert.DoesNotContain("ApplyPollInterval", metricsUi);
             Assert.DoesNotContain("CheckShowFrameTime", metricsUi);
             Assert.DoesNotContain("overlay_show_frame_time", metricsUi);
             Assert.DoesNotContain("CheckShowFrameTime", metricsXaml);
-            Assert.Contains("overlay_update_interval_ms", File.ReadAllText(Path.Combine(root, "PreySense.Overlay", "AppConfig.cs")));
-            Assert.AreEqual(250, PreySense.Overlay.AppConfig.OverlayUpdateIntervalMinMs);
-            Assert.AreEqual(3000, PreySense.Overlay.AppConfig.OverlayUpdateIntervalMaxMs);
-            Assert.AreEqual(1000, PreySense.Overlay.AppConfig.OverlayUpdateIntervalDefaultMs);
-            Assert.AreEqual(250, PreySense.Overlay.AppConfig.OverlayUpdateIntervalStepMs);
             string appConfig = File.ReadAllText(Path.Combine(root, "PreySense.Overlay", "AppConfig.cs"));
+            Assert.DoesNotContain("overlay_update_interval_ms", appConfig);
             Assert.Contains("IsOverlay() || IsOverlayGameOnly()", appConfig);
             string mainWindow = File.ReadAllText(Path.Combine(root, "PreySense.Frontend", "MainWindow.xaml.cs"));
             Assert.Contains("OverlayBridge.StartIfNeeded()", mainWindow);

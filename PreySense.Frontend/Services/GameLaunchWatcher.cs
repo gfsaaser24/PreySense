@@ -99,18 +99,21 @@ namespace PreySense.Frontend.Services
             try
             {
                 GameProfile? match = null;
-                var watchedProfiles = new List<KeyValuePair<string, GameProfile>>();
+                List<KeyValuePair<string, GameProfile>>? watchedProfiles = null;
                 foreach (GameProfile profile in _getProfiles())
                 {
                     string processName = profile.ProcessName;
                     if (profile.Enabled && !string.IsNullOrWhiteSpace(processName))
+                    {
+                        watchedProfiles ??= new List<KeyValuePair<string, GameProfile>>(4);
                         watchedProfiles.Add(new KeyValuePair<string, GameProfile>(processName, profile));
+                    }
                 }
 
                 // Take one process snapshot per tick. Calling GetProcessesByName for
                 // every profile repeatedly walks the system process table and also
                 // leaves the returned Process wrappers to finalization.
-                if (watchedProfiles.Count != 0)
+                if (watchedProfiles is { Count: > 0 })
                 {
                     var runningNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     foreach (Process process in Process.GetProcesses())

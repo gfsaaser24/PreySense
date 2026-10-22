@@ -384,6 +384,36 @@ namespace PreySense.Helpers
 
 
 
+        public readonly record struct ThermalSnapshot(int CpuTemp, int GpuTemp, int CpuRpm, int GpuRpm);
+
+        /// <summary>
+        /// One WMI parameter object and one lock for the four live thermal sensors.
+        /// </summary>
+        public ThermalSnapshot ReadThermalSensors()
+        {
+            lock (_lock)
+            {
+                try
+                {
+                    var obj = GetWmiObject();
+                    if (obj == null)
+                        return default;
+
+                    using var inParams = obj.GetMethodParameters(AcerWmi.GamingMethods.GetSystemInfo);
+                    int cpuTemp = ReadSensor(obj, inParams, AcerWmi.Sensors.CpuTemperature);
+                    int gpuTemp = ReadSensor(obj, inParams, AcerWmi.Sensors.GpuTemperature);
+                    int cpuRpm = RoundToNearest100(ReadSensor(obj, inParams, AcerWmi.Sensors.CpuFanRpm));
+                    int gpuRpm = RoundToNearest100(ReadSensor(obj, inParams, AcerWmi.Sensors.GpuFanRpm));
+                    return new ThermalSnapshot(cpuTemp, gpuTemp, cpuRpm, gpuRpm);
+                }
+                catch
+                {
+                    InvalidateCache();
+                    return default;
+                }
+            }
+        }
+
         private int GetSensorReading(ulong sensorId)
         {
             lock (_lock)
@@ -394,14 +424,30 @@ namespace PreySense.Helpers
                     if (obj == null) return 0;
 
                     using var inParams = obj.GetMethodParameters(AcerWmi.GamingMethods.GetSystemInfo);
-                    inParams["gmInput"] = (ulong)(0x0001 | (sensorId << 8));
-                    using var outParams = obj.InvokeMethod(AcerWmi.GamingMethods.GetSystemInfo, inParams, null);
-                    var raw = (ulong)outParams["gmOutput"];
-                    if ((raw & 0xFF) == 0) return (int)((raw >> 8) & 0xFFFF);
+                    return ReadSensor(obj, inParams, sensorId);
                 }
-                catch { InvalidateCache(); }
-                return 0;
+                catch
+                {
+                    InvalidateCache();
+                    return 0;
+                }
             }
+        }
+
+        private int ReadSensor(ManagementObject obj, ManagementBaseObject inParams, ulong sensorId)
+        {
+            try
+            {
+                inParams["gmInput"] = (ulong)(0x0001 | (sensorId << 8));
+                using var outParams = obj.InvokeMethod(AcerWmi.GamingMethods.GetSystemInfo, inParams, null);
+                var raw = (ulong)outParams["gmOutput"];
+                if ((raw & 0xFF) == 0) return (int)((raw >> 8) & 0xFFFF);
+            }
+            catch
+            {
+                InvalidateCache();
+            }
+            return 0;
         }
 
 
