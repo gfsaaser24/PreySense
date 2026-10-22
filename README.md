@@ -80,9 +80,8 @@ OpenCore is optional. Without it, modes, fans, lighting, GPU switching, and the 
       `PREYSENSE` → `EFI` → `BOOT` → `BOOTX64.EFI`
    3. Repeat: `PREYSENSE` → `EFI` → `OC` → `OpenCore.efi`
    4. Repeat: `PREYSENSE` → `EFI` → `OC` → `Drivers` → `OpenRuntime.efi`
-   5. Boot → put PreySense first in the boot order. Save and exit.
-
-The installer asks **Restart Windows now? (Y/N)**. Y restarts immediately.
+   5. Save & Exit from BIOS. After restart Open BIOS.
+   6. Boot → put PreySense first in the boot order. Save and exit.
 
 USB install is the same files on a FAT32 stick. Restart, press F12, and select the USB drive. Unplug it to boot stock Windows.
 
