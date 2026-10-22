@@ -53,7 +53,7 @@ public static class LocalizationService
         ["ACPI Hardware Override is disabled."] = "ACPI 硬件覆盖已禁用。",
         ["Install to USB Drive"] = "安装到 USB 驱动器", ["Install to Boot Drive"] = "安装到启动驱动器",
         ["Factory Profile Calibration"] = "出厂配置校准", ["Calibrate"] = "校准", ["Not calibrated"] = "尚未校准",
-        ["Enable Metrics Overlay"] = "启用监控浮窗", ["Enabled in Games Only"] = "仅在游戏中启用", ["Show FPS"] = "显示 FPS", ["Show Frame Time"] = "显示帧时间",
+        ["Enable Metrics Overlay"] = "启用监控浮窗", ["Enabled in Games Only"] = "仅在游戏中启用", ["Show FPS"] = "显示 FPS",
         ["Update Interval"] = "更新间隔", ["Background Opacity"] = "背景不透明度", ["HUD Scale"] = "HUD 缩放", ["Horizontal Position"] = "水平位置",
         ["Vertical Position"] = "垂直位置", ["Width"] = "宽度", ["Height"] = "高度", ["Overlay"] = "浮窗", ["Refresh Rate"] = "刷新率",
         ["Profile Mode"] = "配置模式", ["Max"] = "最大",

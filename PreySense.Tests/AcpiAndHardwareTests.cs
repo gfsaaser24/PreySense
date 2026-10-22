@@ -1489,8 +1489,9 @@ namespace PreySense.Tests
             Assert.Contains("_keepOverlayAfterUiHide", overlay);
             Assert.Contains("bool needFps = _showFps || _gameOnly", overlay);
             Assert.Contains("LoadDisplayConfiguration", overlay);
-            Assert.Contains("overlay_show_frame_time", overlay);
-            Assert.Contains("1000.0 / _currentFps", overlay);
+            Assert.DoesNotContain("overlay_show_frame_time", overlay);
+            Assert.DoesNotContain("CopyRecentFrameTimesMs", overlay);
+            Assert.DoesNotContain("1000.0 / _currentFps", overlay);
             string overlayBridge = File.ReadAllText(Path.Combine(root, "PreySense.Frontend", "Services", "OverlayBridge.cs"));
             string overlayManager = File.ReadAllText(Path.Combine(root, "PreySense.Overlay", "HardwareOverlayManager.cs"));
             string metricsUi = File.ReadAllText(Path.Combine(root, "PreySense.Frontend", "Views", "MetricsWindow.xaml.cs"));
@@ -1516,9 +1517,9 @@ namespace PreySense.Tests
             Assert.Contains("Maximum=\"3\"", metricsXaml);
             Assert.Contains("TickFrequency=\"0.25\"", metricsXaml);
             Assert.Contains("ApplyPollInterval", metricsUi);
-            Assert.Contains("CheckShowFrameTime.IsEnabled = showFps", metricsUi);
-            Assert.Contains("overlay_show_frame_time", metricsUi);
-            Assert.Contains("x:Name=\"CheckShowFrameTime\"", metricsXaml);
+            Assert.DoesNotContain("CheckShowFrameTime", metricsUi);
+            Assert.DoesNotContain("overlay_show_frame_time", metricsUi);
+            Assert.DoesNotContain("CheckShowFrameTime", metricsXaml);
             Assert.Contains("overlay_update_interval_ms", File.ReadAllText(Path.Combine(root, "PreySense.Overlay", "AppConfig.cs")));
             Assert.AreEqual(250, PreySense.Overlay.AppConfig.OverlayUpdateIntervalMinMs);
             Assert.AreEqual(3000, PreySense.Overlay.AppConfig.OverlayUpdateIntervalMaxMs);

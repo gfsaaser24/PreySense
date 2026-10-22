@@ -120,7 +120,6 @@ namespace PreySense.Overlay
         private readonly string[] _columnTypes = new string[8];
         private readonly bool[] _columnGraphs = new bool[8];
         private bool _showFps = true;
-        private bool _showFrameTime;
 
         private static readonly HashSet<string> DesktopApps = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -642,25 +641,15 @@ namespace PreySense.Overlay
 
             int topY = padY + innerPadY + 1;
             int textY = topY + (int)Math.Round(sc);
+            int graphH = Math.Max(1, textY + lineH + lineGap + (int)Math.Round(8f * sc) - topY);
 
             // FPS
             if (showFps)
             {
                 string fpsStr = Math.Max(0, _currentFps).ToString();
                 float fpsX = padX + innerPadX - S(sc, 4);
-                if (_showFrameTime && _currentFps > 0)
-                {
-                    string frameTime = $"{1000.0 / _currentFps:F1}ms";
-                    float fpsW = g.MeasureString(fpsStr, font).Width;
-                    float frameTimeW = g.MeasureString(frameTime, unitFont).Width;
-                    g.DrawString(fpsStr, font, _gpuBrush, new PointF(fpsX + (fpsColW - fpsW) / 2f, topY), sf);
-                    g.DrawString(frameTime, unitFont, _gpuBrush, new PointF(fpsX + (fpsColW - frameTimeW) / 2f, topY + lineH), sf);
-                }
-                else
-                {
-                    float fpsW = g.MeasureString(fpsStr, fpsBold).Width;
-                    g.DrawString(fpsStr, fpsBold, _gpuBrush, new PointF(fpsX + (fpsColW - fpsW) / 2f, topY));
-                }
+                float fpsW = g.MeasureString(fpsStr, fpsBold).Width;
+                g.DrawString(fpsStr, fpsBold, _gpuBrush, new PointF(fpsX + (fpsColW - fpsW) / 2f, topY));
             }
 
             // Labels
@@ -669,7 +658,6 @@ namespace PreySense.Overlay
 
             // Columns
             int colCursor = columnsStartX;
-            int graphH = Math.Max(1, textY + lineH + lineGap + (int)Math.Round(8f * sc) - topY);
 
             for (int i = 1; i <= 8; i++)
             {
@@ -1206,7 +1194,6 @@ namespace PreySense.Overlay
                 _columnGraphs[i - 1] = AppConfig.Get($"overlay_col_{i}_graph", i == 5 ? 1 : 0) == 1;
             }
             _showFps = AppConfig.Get("overlay_show_fps", 1) == 1;
-            _showFrameTime = _showFps && AppConfig.Get("overlay_show_frame_time", 0) == 1;
         }
 
         public void StopOverlay()

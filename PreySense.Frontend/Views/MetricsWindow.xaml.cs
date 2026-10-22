@@ -123,7 +123,6 @@ namespace PreySense.Frontend.Views
             bool isOverlayEnabled = AppConfig.IsOverlay();
             bool showInGamesOnly = GetRegInt("overlay_game_only", 0) == 1;
             bool showFps = GetRegInt("overlay_show_fps", 1) == 1;
-            bool showFrameTime = showFps && GetRegInt("overlay_show_frame_time", 0) == 1;
 
             int rawScale = GetRegInt("overlay_scale_percent", 100);
             int scale = (int)Math.Round(rawScale / 25.0) * 25;
@@ -144,8 +143,6 @@ namespace PreySense.Frontend.Views
             CheckEnableOverlay.IsChecked = isOverlayEnabled;
             CheckGameOnly.IsChecked = showInGamesOnly;
             CheckShowFps.IsChecked = showFps;
-            CheckShowFrameTime.IsChecked = showFrameTime;
-            CheckShowFrameTime.IsEnabled = showFps;
             ApplyEnableOverlayAvailability();
             SliderHudScale.Value = scale;
             SliderOpacity.Value = opacityPercent;
@@ -310,22 +307,6 @@ namespace PreySense.Frontend.Views
             if (_isInitializing) return;
             bool showFps = CheckShowFps.IsChecked == true;
             SetRegInt("overlay_show_fps", showFps ? 1 : 0);
-            CheckShowFrameTime.IsEnabled = showFps;
-            if (!showFps)
-            {
-                _isInitializing = true;
-                CheckShowFrameTime.IsChecked = false;
-                _isInitializing = false;
-                SetRegInt("overlay_show_frame_time", 0);
-            }
-            HardwareOverlayManager.RefreshDisplayFlags();
-        }
-
-        private void FrameTimeSettingChanged(object sender, RoutedEventArgs e)
-        {
-            if (_isInitializing) return;
-            bool enabled = CheckShowFps.IsChecked == true && CheckShowFrameTime.IsChecked == true;
-            SetRegInt("overlay_show_frame_time", enabled ? 1 : 0);
             HardwareOverlayManager.RefreshDisplayFlags();
         }
 

@@ -130,17 +130,6 @@
                             <controls:RectangularSwitch Grid.Column="1" x:Name="CheckShowFps" Width="56" Height="28" VerticalAlignment="Center" Checked="SettingChanged" Unchecked="SettingChanged"/>
                         </Grid>
 
-                        <!-- Show Frame Time -->
-                        <Grid Margin="0,4">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <StackPanel VerticalAlignment="Center" Margin="0,0,10,0">
-                                <TextBlock Text="Show Frame Time" FontSize="{DynamicResource FontSizeBody}" FontWeight="SemiBold"/>
-                            </StackPanel>
-                            <controls:RectangularSwitch Grid.Column="1" x:Name="CheckShowFrameTime" Width="56" Height="28" VerticalAlignment="Center" Checked="FrameTimeSettingChanged" Unchecked="FrameTimeSettingChanged"/>
-                        </Grid>
                     </StackPanel>
 
                 </Border>
