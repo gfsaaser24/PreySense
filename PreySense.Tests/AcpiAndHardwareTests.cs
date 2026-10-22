@@ -297,8 +297,10 @@ namespace PreySense.Tests
         [TestMethod]
         public void Test_TauEncoding_KnownFirmwareValues()
         {
-            Assert.AreEqual(0x00, CpuPowerLimitConfiguration.EncodeTauSeconds(0));
+            Assert.AreEqual(0x01, CpuPowerLimitConfiguration.EncodeTauSeconds(0));
+            Assert.AreEqual(0x01, CpuPowerLimitConfiguration.EncodeTauSelection(0));
             Assert.AreEqual(0, CpuPowerLimitConfiguration.DecodeTauSeconds(0x00));
+            Assert.AreEqual(0, CpuPowerLimitConfiguration.DecodeTauSeconds(0x01));
             Assert.AreEqual("0 s", CpuPowerLimitConfiguration.FormatTauSelection(0));
             Assert.AreEqual(0x6F, CpuPowerLimitConfiguration.EncodeTauSeconds(56));
             Assert.AreEqual(56, CpuPowerLimitConfiguration.DecodeTauSeconds(0x6F));
@@ -307,6 +309,12 @@ namespace PreySense.Tests
             Assert.AreEqual(0x7F, CpuPowerLimitConfiguration.EncodeTauSelection(CpuPowerLimitConfiguration.InfiniteTauSliderValue));
             Assert.AreEqual("448 s", CpuPowerLimitConfiguration.FormatTauSelection(448));
             Assert.AreEqual("∞", CpuPowerLimitConfiguration.FormatTauSelection(CpuPowerLimitConfiguration.InfiniteTauSliderValue));
+            Assert.AreEqual(56, CpuPowerLimitConfiguration.SnapTauSelection(56));
+            Assert.AreEqual(56, CpuPowerLimitConfiguration.SnapTauSelection(48));
+            Assert.AreEqual(32, CpuPowerLimitConfiguration.SnapTauSelection(40));
+            Assert.AreEqual(256, CpuPowerLimitConfiguration.SnapTauSelection(256));
+            Assert.AreEqual(CpuPowerLimitConfiguration.InfiniteTauSliderValue, CpuPowerLimitConfiguration.SnapTauSelection(448));
+            Assert.AreEqual(56, CpuPowerLimitConfiguration.TauSecondsForIndex(CpuPowerLimitConfiguration.TauStepIndex(56)));
         }
 
         [TestMethod]

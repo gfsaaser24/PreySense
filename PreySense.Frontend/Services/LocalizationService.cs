@@ -38,7 +38,7 @@ public static class LocalizationService
         ["GPU Mode"] = "GPU 模式", ["Hybrid"] = "混合模式", ["Advanced Optimus"] = "高级 Optimus", ["dGPU Only"] = "仅独立显卡",
         ["CPU Power Limits"] = "CPU 功耗限制", ["GPU Power Limits"] = "GPU 功耗限制", ["GPU Power Limit"] = "GPU 功耗限制",
         ["Sustained Long Power [PL1]"] = "持续功耗 [PL1]", ["Short Burst Power [PL2]"] = "短时突发功耗 [PL2]", ["Burst Peak Power [PL2]"] = "峰值突发功耗 [PL2]",
-        ["Burst Window [Tau]"] = "突发时间窗口 [Tau]", ["Thermal Trip Point [WMG3]"] = "温度保护点 [WMG3]", ["GPU Thermal Trip Point [WMG3]"] = "GPU 温度保护点 [WMG3]",
+        ["CPU Boost"] = "CPU 睿频", ["Burst Window [Tau]"] = "突发时间窗口 [Tau]", ["Thermal Trip Point [WMG3]"] = "温度保护点 [WMG3]", ["GPU Thermal Trip Point [WMG3]"] = "GPU 温度保护点 [WMG3]",
         ["Reset"] = "重置", ["Apply"] = "应用", ["Save"] = "保存", ["Cancel"] = "取消", ["Install"] = "安装", ["Uninstall"] = "卸载", ["Quit"] = "退出",
         ["Advanced"] = "高级", ["Run on Windows Startup"] = "随 Windows 启动", ["Theme"] = "主题", ["Light"] = "浅色", ["Dark"] = "深色",
         ["Battery Health Limit"] = "电池健康限制", ["Acer Services"] = "Acer 服务", ["Enabled"] = "已启用", ["Disabled"] = "已禁用",

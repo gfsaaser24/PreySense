@@ -80,14 +80,29 @@
                     </StackPanel>
                 </Border>
 
-                <Border Style="{StaticResource OriginalSectionPanelStyle}">
-                    <StackPanel IsEnabled="{Binding HasSelectedGameProfile}">
+                <Border Style="{StaticResource OriginalSectionPanelStyle}" Margin="0,0,0,8"
+                        IsEnabled="{Binding HasSelectedGameProfile}">
+                    <StackPanel>
                         <controls:SettingSwitchRow Title="Apply When Game Launches"
                                                    IsChecked="{Binding SelectedGameEnabled, Mode=TwoWay}"/>
                         <controls:SettingDropdownRow Title="Performance Mode"
                                                      ItemsSource="{Binding GameModeNames}"
                                                      SelectedItem="{Binding SelectedGameModeName, Mode=TwoWay}"
                                                      DropdownWidth="140"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource OriginalSectionPanelStyle}" Margin="0,0,0,8"
+                        IsEnabled="{Binding HasSelectedGameProfile}">
+                    <StackPanel>
+                        <Grid Style="{StaticResource OriginalSectionTitlePanelStyle}">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <controls:ThemedIcon Source="pack://application:,,,/Resources/icons8-processor-32.png" Width="14" Height="14" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="CPU Power Limits" Style="{StaticResource OriginalSectionTitleStyle}"/>
+                            </StackPanel>
+                        </Grid>
+                        <controls:SettingSwitchRow Title="CPU Boost"
+                                                   IsChecked="{Binding SelectedGameCpuBoost, Mode=TwoWay}"/>
                         <controls:SettingValueRow Title="Sustained Long Power [PL1]"
                                                   Value="{Binding SelectedGamePl1, Mode=TwoWay}"
                                                   Unit="W"/>
@@ -95,11 +110,24 @@
                                                   Value="{Binding SelectedGamePl2, Mode=TwoWay}"
                                                   Unit="W"/>
                         <controls:SettingSliderRow Title="Burst Window [Tau]"
-                                                   Value="{Binding SelectedGameTau, Mode=TwoWay}"
+                                                   Value="{Binding SelectedGameTauIndex, Mode=TwoWay}"
                                                    ValueText="{Binding SelectedGameTauText}"
-                                                   Minimum="0" Maximum="449"
-                                                   SmallChange="1" TickFrequency="1"
+                                                   Minimum="0" Maximum="{Binding TauSliderMaximum}"
+                                                   SmallChange="1" LargeChange="1" TickFrequency="1"
+                                                   IsSnapToTickEnabled="True"
                                                    Margin="0,8,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource OriginalSectionPanelStyle}" Margin="0,0,0,8"
+                        IsEnabled="{Binding HasSelectedGameProfile}">
+                    <StackPanel>
+                        <Grid Style="{StaticResource OriginalSectionTitlePanelStyle}">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <controls:ThemedIcon Source="pack://application:,,,/Resources/icons8-video-card-32.png" Width="14" Height="14" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="GPU Power Limits" Style="{StaticResource OriginalSectionTitleStyle}"/>
+                            </StackPanel>
+                        </Grid>
                         <controls:SettingValueRow Title="GPU Power Limit"
                                                   Value="{Binding SelectedGameGpuWatts, Mode=TwoWay}"
                                                   Unit="W"
@@ -113,6 +141,14 @@
                                                    Margin="0,8,0,0"/>
                     </StackPanel>
                 </Border>
+
+                <UniformGrid Columns="2" Style="{StaticResource WindowFooterPanelStyle}" Margin="0,0,0,8"
+                             IsEnabled="{Binding HasSelectedGameProfile}">
+                    <Button Content="Apply" Style="{StaticResource WindowFooterButtonStyle}"
+                            Command="{Binding ApplySelectedGameProfileCommand}"/>
+                    <Button Content="Save" Style="{StaticResource WindowFooterButtonStyle}"
+                            Command="{Binding SaveSelectedGameProfileCommand}"/>
+                </UniformGrid>
             </StackPanel>
         </Grid>
     </Border>

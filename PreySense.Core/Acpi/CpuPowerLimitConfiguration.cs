@@ -7,6 +7,51 @@ namespace PreySense.Core.Acpi
         private const double RaplTimeUnitSeconds = 1.0 / 1024.0;
         public const int InfiniteTauSliderValue = 449;
         public const byte InfiniteTauEncodedValue = 0x7F;
+        public const int FactoryTauSeconds = 56;
+
+        // Equal slider notches. 56 stays between 32 and 64 so the factory window is exact.
+        // The notch after 256 is infinity.
+        public static readonly int[] TauSliderSteps =
+        [
+            0, 1, 2, 4, 8, 16, 32, FactoryTauSeconds, 64, 128, 256, InfiniteTauSliderValue
+        ];
+
+        public static int TauSliderMaximum => TauSliderSteps.Length - 1;
+
+        public static int SnapTauSelection(int seconds)
+        {
+            if (seconds >= InfiniteTauSliderValue || seconds > 256)
+                return InfiniteTauSliderValue;
+
+            int best = TauSliderSteps[0];
+            int bestDistance = int.MaxValue;
+            foreach (int step in TauSliderSteps)
+            {
+                if (step >= InfiniteTauSliderValue)
+                    continue;
+                int distance = Math.Abs(step - seconds);
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    best = step;
+                }
+            }
+            return best;
+        }
+
+        public static int TauStepIndex(int seconds)
+        {
+            int snapped = SnapTauSelection(seconds);
+            for (int i = 0; i < TauSliderSteps.Length; i++)
+            {
+                if (TauSliderSteps[i] == snapped)
+                    return i;
+            }
+            return 0;
+        }
+
+        public static int TauSecondsForIndex(int index) =>
+            TauSliderSteps[Math.Clamp(index, 0, TauSliderSteps.Length - 1)];
 
         public static byte EncodeTauSelection(int sliderValue) =>
             sliderValue >= InfiniteTauSliderValue ? InfiniteTauEncodedValue : EncodeTauSeconds(sliderValue);
@@ -16,8 +61,9 @@ namespace PreySense.Core.Acpi
 
         public static byte EncodeTauSeconds(int seconds)
         {
+            // 0x00 is ignored by PREYDEV, so the 0 s slider writes the shortest stored window.
             if (seconds <= 0)
-                return 0;
+                return 0x01;
 
             double target = Math.Clamp(seconds, 1, 65535);
             byte best = 0;
@@ -67,7 +113,6 @@ namespace PreySense.Core.Acpi
         public const int FactoryTurboPl1 = 85;
         public const int FactoryTurboPl2 = 140;
 
-        public const int FactoryTauSeconds = 56;
         public const int MaxPowerLimitWatts = 999;
 
         // Custom Target Limits (Watts)

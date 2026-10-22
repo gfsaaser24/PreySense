@@ -264,7 +264,7 @@ namespace PreySense.Frontend.ViewModels
             int limitedPl1 = LimitPl1ToPlatform(pl1);
             TauSeconds = TauForMode(mode);
             PowerLimitController.SetCpuPowerLimits(limitedPl1, LimitPl2(limitedPl1, pl2), true, TauSeconds);
-            PowerLimitController.SetCpuBoost(CpuBoostMode);
+            ApplyCpuBoostForMode(mode);
             PreySense.Core.Hardware.PreySenseWmiDeviceClient.SetGpuPowerLimit((uint)gpuWatts);
             PreySense.Core.Hardware.PreySenseWmiDeviceClient.SetGpuThermalTripPoint((uint)gpuTrip);
 

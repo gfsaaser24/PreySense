@@ -341,6 +341,7 @@ namespace PreySense.Frontend.ViewModels
                     CustomEcoPl2 = cpu.EcoPl2;
                     CustomEcoGpuWatts = gpu.EcoGpuWatts;
                     CustomEcoGpuTripPoint = gpu.EcoGpuTripPointCelsius;
+                    CustomEcoCpuBoost = true;
                     break;
                 case 1:
                     CustomQuietTau = cpu.QuietTauSeconds;
@@ -348,6 +349,7 @@ namespace PreySense.Frontend.ViewModels
                     CustomQuietPl2 = cpu.QuietPl2;
                     CustomQuietGpuWatts = gpu.QuietGpuWatts;
                     CustomQuietGpuTripPoint = gpu.QuietGpuTripPointCelsius;
+                    CustomQuietCpuBoost = true;
                     break;
                 case 2:
                     CustomBalancedTau = cpu.BalancedTauSeconds;
@@ -355,6 +357,7 @@ namespace PreySense.Frontend.ViewModels
                     CustomBalancedPl2 = cpu.BalancedPl2;
                     CustomBalancedGpuWatts = gpu.BalancedGpuWatts;
                     CustomBalancedGpuTripPoint = gpu.BalancedGpuTripPointCelsius;
+                    CustomBalancedCpuBoost = true;
                     break;
                 case 3:
                     CustomPerfTau = cpu.PerformanceTauSeconds;
@@ -362,6 +365,7 @@ namespace PreySense.Frontend.ViewModels
                     CustomPerfPl2 = cpu.PerformancePl2;
                     CustomPerfGpuWatts = gpu.PerformanceGpuWatts;
                     CustomPerfGpuTripPoint = gpu.PerformanceGpuTripPointCelsius;
+                    CustomPerfCpuBoost = true;
                     break;
                 case 4:
                     CustomTurboTau = cpu.TurboTauSeconds;
@@ -369,6 +373,7 @@ namespace PreySense.Frontend.ViewModels
                     CustomTurboPl2 = cpu.TurboPl2;
                     CustomTurboGpuWatts = gpu.TurboGpuWatts;
                     CustomTurboGpuTripPoint = gpu.TurboGpuTripPointCelsius;
+                    CustomTurboCpuBoost = true;
                     break;
             }
         }
@@ -383,6 +388,50 @@ namespace PreySense.Frontend.ViewModels
         [ObservableProperty] private int _customBalancedTau = CpuPowerLimitConfiguration.FactoryTauSeconds;
         [ObservableProperty] private int _customPerfTau = CpuPowerLimitConfiguration.FactoryTauSeconds;
         [ObservableProperty] private int _customTurboTau = CpuPowerLimitConfiguration.FactoryTauSeconds;
+        [ObservableProperty] private bool _customQuietCpuBoost = true;
+        [ObservableProperty] private bool _customEcoCpuBoost = true;
+        [ObservableProperty] private bool _customBalancedCpuBoost = true;
+        [ObservableProperty] private bool _customPerfCpuBoost = true;
+        [ObservableProperty] private bool _customTurboCpuBoost = true;
+
+        public bool CpuBoostForMode(byte mode) => mode switch
+        {
+            0x05 => CustomTurboCpuBoost,
+            0x04 => CustomPerfCpuBoost,
+            0x01 => CustomBalancedCpuBoost,
+            0x06 => CustomEcoCpuBoost,
+            _ => CustomQuietCpuBoost
+        };
+
+        public bool CpuBoostForModeIndex(int modeIndex) => modeIndex switch
+        {
+            0 => CustomEcoCpuBoost,
+            1 => CustomQuietCpuBoost,
+            2 => CustomBalancedCpuBoost,
+            3 => CustomPerfCpuBoost,
+            _ => CustomTurboCpuBoost
+        };
+
+        public void SetCpuBoostForModeIndex(int modeIndex, bool enabled)
+        {
+            switch (modeIndex)
+            {
+                case 0: CustomEcoCpuBoost = enabled; break;
+                case 1: CustomQuietCpuBoost = enabled; break;
+                case 2: CustomBalancedCpuBoost = enabled; break;
+                case 3: CustomPerfCpuBoost = enabled; break;
+                default: CustomTurboCpuBoost = enabled; break;
+            }
+        }
+
+        public void ApplyCpuBoostForMode(byte mode)
+        {
+            int boost = CpuBoostForMode(mode) ? 1 : 0;
+            if (CpuBoostMode != boost)
+                CpuBoostMode = boost;
+            else
+                PowerLimitController.SetCpuBoost(boost);
+        }
 
         public int TauForMode(byte mode) => Math.Clamp(mode switch
         {
@@ -849,6 +898,12 @@ namespace PreySense.Frontend.ViewModels
                     CustomBalancedTau = Math.Clamp((int)key.GetValue("BalancedTau", sharedTau), 0, CpuPowerLimitConfiguration.InfiniteTauSliderValue);
                     CustomPerfTau = Math.Clamp((int)key.GetValue("PerfTau", sharedTau), 0, CpuPowerLimitConfiguration.InfiniteTauSliderValue);
                     CustomTurboTau = Math.Clamp((int)key.GetValue("TurboTau", sharedTau), 0, CpuPowerLimitConfiguration.InfiniteTauSliderValue);
+                    bool fallbackBoost = CpuBoostMode != 0;
+                    CustomQuietCpuBoost = ReadBoostFlag(key, "QuietCpuBoost", fallbackBoost);
+                    CustomEcoCpuBoost = ReadBoostFlag(key, "EcoCpuBoost", fallbackBoost);
+                    CustomBalancedCpuBoost = ReadBoostFlag(key, "BalancedCpuBoost", fallbackBoost);
+                    CustomPerfCpuBoost = ReadBoostFlag(key, "PerfCpuBoost", fallbackBoost);
+                    CustomTurboCpuBoost = ReadBoostFlag(key, "TurboCpuBoost", fallbackBoost);
                     TauSeconds = TauForMode(ActivePowerMode);
                     ClampCpuPl1ToPlatformLimit();
                     AppLogger.Log("[MainViewModel] Loaded CPU power limits from registry.");
@@ -1030,6 +1085,11 @@ namespace PreySense.Frontend.ViewModels
                     key.SetValue("BalancedTau", CustomBalancedTau);
                     key.SetValue("PerfTau", CustomPerfTau);
                     key.SetValue("TurboTau", CustomTurboTau);
+                    key.SetValue("QuietCpuBoost", CustomQuietCpuBoost ? 1 : 0);
+                    key.SetValue("EcoCpuBoost", CustomEcoCpuBoost ? 1 : 0);
+                    key.SetValue("BalancedCpuBoost", CustomBalancedCpuBoost ? 1 : 0);
+                    key.SetValue("PerfCpuBoost", CustomPerfCpuBoost ? 1 : 0);
+                    key.SetValue("TurboCpuBoost", CustomTurboCpuBoost ? 1 : 0);
                 }
 
                 // Also persist GPU limits
@@ -1050,6 +1110,9 @@ namespace PreySense.Frontend.ViewModels
             }
         }
 
+        private static bool ReadBoostFlag(Microsoft.Win32.RegistryKey key, string name, bool fallback) =>
+            key.GetValue(name) is int value ? value != 0 : fallback;
+
         private void SyncProfile(byte mode, int pl1, int pl2, int tauSeconds)
         {
             try
@@ -1058,6 +1121,7 @@ namespace PreySense.Frontend.ViewModels
                 profile.CpuPl1 = pl1;
                 profile.CpuPl2 = pl2;
                 profile.TauSeconds = tauSeconds;
+                profile.CpuBoost = CpuBoostForMode(mode) ? 1 : 0;
                 PreySense.Mode.ProfileManager.SaveProfile(profile);
             }
             catch { }

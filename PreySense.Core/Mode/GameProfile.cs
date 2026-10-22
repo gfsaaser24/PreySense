@@ -12,6 +12,7 @@ namespace PreySense.Mode
         public int TauSeconds { get; set; } = CpuPowerLimitConfiguration.FactoryTauSeconds;
         public int GpuPowerWatts { get; set; } = 130;
         public int GpuThermalTripCelsius { get; set; } = GpuPowerLimitConfiguration.FactoryGpuThermalTripPointCelsius;
+        public bool CpuBoostEnabled { get; set; } = true;
         public bool Enabled { get; set; } = true;
 
         public string ProcessName

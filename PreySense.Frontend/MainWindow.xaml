@@ -15,7 +15,7 @@
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
           <Image Source="pack://application:,,,/appicon.ico" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Center" />
           <TextBlock Text="PreySense" Style="{DynamicResource WindowTitleTextStyle}"/>
-          <TextBlock Text=" • v2.0.5" Style="{DynamicResource WindowSubtitleTextStyle}"/>
+          <TextBlock Text=" • v2.1.0" Style="{DynamicResource WindowSubtitleTextStyle}"/>
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Stretch">
           <Button AutomationProperties.AutomationId="BtnSettings" Style="{StaticResource TitleBarButtonStyle}" Click="SettingsButton_Click">

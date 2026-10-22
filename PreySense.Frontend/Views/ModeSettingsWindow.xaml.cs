@@ -1,7 +1,9 @@
 using System;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Input;
 using PreySense.Core.Acpi;
+using PreySense.Frontend.Controls;
 using PreySense.Frontend.ViewModels;
 using PreySense.Helpers;
 
@@ -18,6 +20,9 @@ namespace PreySense.Frontend.Views
             MaxHeight = SystemParameters.WorkArea.Height - 40;
             TuningScroll.MaxHeight = Math.Max(1, MaxHeight - 220);
             Loaded += ModeSettingsWindow_Loaded;
+            DependencyPropertyDescriptor
+                .FromProperty(SettingSwitchRow.IsCheckedProperty, typeof(SettingSwitchRow))
+                .AddValueChanged(SwitchCpuBoost, CpuBoostSwitch_Changed);
         }
 
         private void ModeSettingsWindow_Loaded(object sender, RoutedEventArgs e)
@@ -64,6 +69,9 @@ namespace PreySense.Frontend.Views
 
         private static string FormatTau(int seconds) => CpuPowerLimitConfiguration.FormatTauSelection(seconds);
 
+        private int ReadTauSeconds() =>
+            CpuPowerLimitConfiguration.TauSecondsForIndex((int)Math.Round(SliderTau?.Value ?? 0));
+
         private string GetSelectedModeName() => _selectedModeIndex switch
         {
             0 => "Eco",
@@ -107,10 +115,14 @@ namespace PreySense.Frontend.Views
 
             if (SliderTau != null)
             {
-                int tau = vm.TauForModeIndex(_selectedModeIndex);
-                SliderTau.Value = tau;
+                int tau = CpuPowerLimitConfiguration.SnapTauSelection(vm.TauForModeIndex(_selectedModeIndex));
+                SliderTau.Maximum = CpuPowerLimitConfiguration.TauSliderMaximum;
+                SliderTau.Value = CpuPowerLimitConfiguration.TauStepIndex(tau);
                 if (LabelTau != null) LabelTau.Text = FormatTau(tau);
             }
+
+            if (SwitchCpuBoost != null)
+                SwitchCpuBoost.IsChecked = vm.CpuBoostForModeIndex(_selectedModeIndex);
 
             int gpuWatts = _selectedModeIndex switch
             {
@@ -242,7 +254,7 @@ namespace PreySense.Frontend.Views
         private void SliderTau_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
             if (SliderTau == null || LabelTau == null) return;
-            int val = (int)Math.Round(SliderTau.Value);
+            int val = ReadTauSeconds();
             LabelTau.Text = FormatTau(val);
 
             if (!_isUpdatingUi && DataContext is MainViewModel vm && vm.IsAcpiOverrideEnabled)
@@ -257,8 +269,7 @@ namespace PreySense.Frontend.Views
                     {
                         _debounceTauTimer.Stop();
                         if (SliderTau == null) return;
-                        int finalVal = (int)Math.Round(SliderTau.Value);
-                        vm.SetTauForModeIndex(_selectedModeIndex, finalVal);
+                        vm.SetTauForModeIndex(_selectedModeIndex, ReadTauSeconds());
                     };
                 }
                 _debounceTauTimer.Stop();
@@ -301,11 +312,13 @@ namespace PreySense.Frontend.Views
             if (DataContext is not MainViewModel vm || !vm.IsAcpiOverrideEnabled) return;
 
             var (pl1, pl2) = ReadClampedLimits(preferPl2: false);
-            int tau = (int)Math.Round(SliderTau.Value);
+            int tau = ReadTauSeconds();
 
             WriteClampedLimitsToEditor(pl1, pl2);
             StoreModeLimits(pl1, pl2);
             vm.SetTauForModeIndex(_selectedModeIndex, tau);
+            vm.SetCpuBoostForModeIndex(_selectedModeIndex, SwitchCpuBoost?.IsChecked == true);
+            vm.ApplyCpuBoostForMode(ModeIndexToByte(_selectedModeIndex));
             vm.Pl1Watts = pl1;
             vm.Pl2Watts = pl2;
 
@@ -334,7 +347,8 @@ namespace PreySense.Frontend.Views
             vm.ApplyGpuClocksCommand.Execute(null);
 
             string modeName = GetSelectedModeName();
-            vm.StatusMessage = $"Applied {modeName}: PL1 {pl1}W, PL2 {pl2}W, Tau {FormatTau(tau)}, GPU {vm.GpuPowerTargetWatts}W, Trip {vm.GpuThermalTripPointCelsius}°C to hardware.";
+            string boost = SwitchCpuBoost?.IsChecked == true ? "on" : "off";
+            vm.StatusMessage = $"Applied {modeName}: PL1 {pl1}W, PL2 {pl2}W, Tau {FormatTau(tau)}, CPU Boost {boost}, GPU {vm.GpuPowerTargetWatts}W, Trip {vm.GpuThermalTripPointCelsius}°C to hardware.";
         }
 
         private void SaveButton_Click(object sender, RoutedEventArgs e)
@@ -342,11 +356,12 @@ namespace PreySense.Frontend.Views
             if (DataContext is not MainViewModel vm || !vm.IsAcpiOverrideEnabled) return;
 
             var (pl1, pl2) = ReadClampedLimits(preferPl2: false);
-            int tau = (int)Math.Round(SliderTau.Value);
+            int tau = ReadTauSeconds();
 
             WriteClampedLimitsToEditor(pl1, pl2);
             StoreModeLimits(pl1, pl2);
             vm.SetTauForModeIndex(_selectedModeIndex, tau);
+            vm.SetCpuBoostForModeIndex(_selectedModeIndex, SwitchCpuBoost?.IsChecked == true);
 
             int gpuW = ReadGpuWatts();
             if (RowGpuPower != null) RowGpuPower.Value = gpuW;
@@ -369,7 +384,24 @@ namespace PreySense.Frontend.Views
             vm.SaveCpuLimitsToRegistry();
 
             string modeName = GetSelectedModeName();
-            vm.StatusMessage = $"Saved {modeName} limits (PL1 {pl1}W, PL2 {pl2}W, Tau {FormatTau(tau)}) to registry.";
+            string boost = SwitchCpuBoost?.IsChecked == true ? "on" : "off";
+            vm.StatusMessage = $"Saved {modeName} limits (PL1 {pl1}W, PL2 {pl2}W, Tau {FormatTau(tau)}, CPU Boost {boost}) to registry.";
         }
+
+        private void CpuBoostSwitch_Changed(object? sender, EventArgs e)
+        {
+            if (_isUpdatingUi || DataContext is not MainViewModel vm || SwitchCpuBoost?.IsChecked is not bool enabled)
+                return;
+            vm.SetCpuBoostForModeIndex(_selectedModeIndex, enabled);
+        }
+
+        private static byte ModeIndexToByte(int modeIndex) => modeIndex switch
+        {
+            0 => 0x06,
+            1 => 0x00,
+            3 => 0x04,
+            4 => 0x05,
+            _ => 0x01
+        };
     }
 }

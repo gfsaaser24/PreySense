@@ -182,9 +182,11 @@ namespace PreySense.Frontend.ViewModels
                     if (_hw.CurrentPowerMode != mode)
                         _hw.SetPowerMode(mode);
                     PowerLimitController.SetCpuPowerLimits(modePl1, modePl2, true, TauSeconds);
+                    PowerLimitController.SetCpuBoost(CpuBoostForMode(mode) ? 1 : 0);
                     PreySense.Core.Hardware.PreySenseWmiDeviceClient.SetGpuPowerLimit((uint)modeGpu);
                     PreySense.Core.Hardware.PreySenseWmiDeviceClient.SetGpuThermalTripPoint((uint)modeTrip);
                 });
+                ApplyCpuBoostForMode(mode);
                 StatusMessage = $"{PowerModeName} Mode Activated";
                 ModeToastWindow.ShowConfirmedMode(mode, GetModeTitle(mode));
             }
