@@ -20,6 +20,10 @@ OEM `_Q30` and `WMBH` are not renamed. The physical Turbo key still goes through
 
 OpenCore security for this package: `Vault=Optional`, `SecureBootModel=Disabled`, `ScanPolicy=0`, Apple SMBIOS spoof off, driver list = `OpenRuntime.efi` only.
 
+`Booter -> Quirks -> SyncRuntimePermissions` is on. `RequestBootVarRouting` keeps an `OpenRuntime.efi` variable hook after `ExitBootServices`. Some Acer firmware marks that runtime image non-executable in the memory attributes table. Windows with Secure Boot (VBS / Hypervisor-enforced code integrity) then bugchecks `SYSTEM_THREAD_EXCEPTION_NOT_HANDLED` (`0x7E`). The same boot with Secure Boot off skips that check, which is why disabling Secure Boot appears to fix it. Whitelisting `BOOTX64.EFI` only lets the file start; it does not fix the runtime permissions. Firmware that already marks `OpenRuntime` executable boots with Secure Boot left on.
+
+`PHN16S-71-98LX` uses the same factory ACPI as `PHN16S-71-98RF` for the tables this package patches. DSDT is byte-identical. The PCCC SSDT is 20131 bytes and the E3DT SSDT is 26025 bytes on both, and both contain the patch patterns, so no second SSDT is required.
+
 ---
 
 ## `PreySenseControl` methods

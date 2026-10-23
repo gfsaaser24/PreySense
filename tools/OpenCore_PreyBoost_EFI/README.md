@@ -10,6 +10,7 @@ It loads before Windows. It does not flash the BIOS, load unsigned Windows drive
 - Patches Intel **PCCC** so IPF’s advertised PL1 ceiling is 999 W.
 - Patches SSDO **E3DT** `0x0E` → `0x0D` (GPU-to-CPU cross-throttle).
 - Leaves OEM `_Q30`, `WMBH`, fans, and profile tables in place.
+- Sets `SyncRuntimePermissions` so Windows does not bugcheck `0x7E` when Secure Boot is on and the BIOS memory attributes table marks `OpenRuntime.efi` non-executable.
 
 Live PL1/PL2/Tau/GPU TGP/WMG3 are written later from Windows by PreySense.
 

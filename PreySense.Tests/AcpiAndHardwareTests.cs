@@ -356,6 +356,7 @@ namespace PreySense.Tests
             Assert.IsTrue(System.Text.RegularExpressions.Regex.IsMatch(plist, @"<key>ShowPicker</key>\s*<false\s*/>"));
             Assert.IsTrue(System.Text.RegularExpressions.Regex.IsMatch(plist, @"<key>Vault</key>\s*<string>Optional</string>"));
             Assert.IsTrue(plist.Contains("OpenRuntime.efi"));
+            Assert.IsTrue(System.Text.RegularExpressions.Regex.IsMatch(plist, @"<key>SyncRuntimePermissions</key>\s*<true\s*/>"));
             Assert.IsFalse(plist.Contains("ResetNvramEntry", StringComparison.OrdinalIgnoreCase));
             Assert.IsTrue(plist.Contains("CustomPciSerialDevice"));
             Assert.IsFalse(plist.Contains("CustomPciBarSize"));
@@ -1682,12 +1683,12 @@ namespace PreySense.Tests
             string dsl = File.ReadAllText(Path.Combine(root, "acpi_staging", "SSDT-PREYDEV.dsl"));
             string efiDsl = File.ReadAllText(Path.Combine(root, "tools", "OpenCore_PreyBoost_EFI", "EFI", "OC", "ACPI", "SSDT-PREYDEV.dsl"));
             string repairCode = File.ReadAllText(Path.Combine(root, "PreySense.Core", "Hardware", "PreySenseWmiRepair.cs"));
-            Assert.Contains("// PreySenseInterfaceVersion=0x0102", mof);
-            Assert.Contains("DefinitionBlock (\"\", \"SSDT\", 2, \"PREY\", \"PREYDEV\", 0x00000102)", dsl);
-            Assert.Contains("PKG1 [Zero] = 0x0102", dsl);
+            Assert.Contains("// PreySenseInterfaceVersion=0x0103", mof);
+            Assert.Contains("DefinitionBlock (\"\", \"SSDT\", 2, \"PREY\", \"PREYDEV\", 0x00000103)", dsl);
+            Assert.Contains("PKG1 [Zero] = 0x0103", dsl);
             Assert.AreEqual(dsl, efiDsl);
             Assert.IsTrue(PreySenseWmiRepair.TryParseInterfaceVersion(mof, out uint version));
-            Assert.AreEqual(0x0102u, version);
+            Assert.AreEqual(0x0103u, version);
             Assert.IsTrue(PreySenseWmiRepair.ShouldRebuild(PreySenseWmiSchemaState.Missing));
             Assert.IsTrue(PreySenseWmiRepair.ShouldRebuild(PreySenseWmiSchemaState.Mismatched));
             Assert.IsFalse(PreySenseWmiRepair.ShouldRebuild(PreySenseWmiSchemaState.Ready));

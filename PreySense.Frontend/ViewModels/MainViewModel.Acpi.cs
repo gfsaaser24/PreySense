@@ -743,6 +743,16 @@ namespace PreySense.Frontend.ViewModels
             File.WriteAllBytes(Path.Combine(acpiDirectory, "SSDT-PREYDEV.aml"), ReadEmbeddedAcpiPayload("PreySense.ACPI.SSDT-PREYDEV.aml"));
             File.WriteAllBytes(Path.Combine(acpiDirectory, "SSDT-PREYDEV.dsl"), ReadEmbeddedAcpiPayload("PreySense.ACPI.SSDT-PREYDEV.dsl"));
 
+            string driversDirectory = Path.Combine(packageRoot, "EFI", "OC", "Drivers");
+            if (Directory.Exists(driversDirectory))
+            {
+                foreach (string extra in Directory.GetFiles(driversDirectory))
+                {
+                    if (!string.Equals(Path.GetFileName(extra), "OpenRuntime.efi", StringComparison.OrdinalIgnoreCase))
+                        File.Delete(extra);
+                }
+            }
+
             string configPath = Path.Combine(packageRoot, "EFI", "OC", "config.plist");
             if (!OpenCorePowerLimitManager.UpdateConfigPlistPatches(configPath, string.Empty, 0))
             {

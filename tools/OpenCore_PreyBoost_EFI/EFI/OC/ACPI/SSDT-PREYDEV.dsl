@@ -8,7 +8,7 @@
  *     and direct NVPCF/ERM4 GPU Power Limit control
  *   - Completely independent from Acer OEM firmware methods (_Q30, WMBH)
  */
-DefinitionBlock ("", "SSDT", 2, "PREY", "PREYDEV", 0x00000102)
+DefinitionBlock ("", "SSDT", 2, "PREY", "PREYDEV", 0x00000103)
 {
     External (\PPL1, FieldUnitObj)
     External (\PPL2, FieldUnitObj)
@@ -223,7 +223,7 @@ DefinitionBlock ("", "SSDT", 2, "PREY", "PREYDEV", 0x00000102)
              * Arg2: Input buffer
              * Return: Output Package or Integer
              *
-             * WmiMethodId 1: GetVersion() -> 0x0102 (must match PreySenseInterfaceVersion in preysense.mof)
+             * WmiMethodId 1: GetVersion() -> 0x0103 (must match PreySenseInterfaceVersion in preysense.mof)
              * WmiMethodId 2: Ping() -> 0x50524559 ("PREY")
              * WmiMethodId 3: SetCpuPowerLimits(in pl1_mW, in pl2_mW, in tauEncoded, out retCode)
              * WmiMethodId 4: GetCpuPowerLimits(out pl1_mW, out pl2_mW, out tauEncoded, out retCode)
@@ -243,7 +243,7 @@ DefinitionBlock ("", "SSDT", 2, "PREY", "PREYDEV", 0x00000102)
                 {
                     Case (One) // GetVersion
                     {
-                        PKG1 [Zero] = 0x0102
+                        PKG1 [Zero] = 0x0103
                         Return (PKG1)
                     }
                     Case (0x02) // Ping
