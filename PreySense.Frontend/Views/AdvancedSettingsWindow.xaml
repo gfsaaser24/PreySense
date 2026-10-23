@@ -24,22 +24,7 @@
             </Grid.RowDefinitions>
 
             <!-- Custom Title Bar -->
-            <Grid Grid.Row="0" Style="{DynamicResource WindowTitleBarStyle}" MouseDown="TitleBar_MouseDown">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
-                    <Image Source="pack://application:,,,/appicon.ico" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                    <TextBlock Text="PreySense" Style="{DynamicResource WindowTitleTextStyle}"/>
-                    <TextBlock Text=" • Settings" Style="{DynamicResource WindowSubtitleTextStyle}"/>
-                </StackPanel>
-
-                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Stretch">
-                    <Button Style="{StaticResource TitleBarCloseButtonStyle}" Content="✕" FontSize="{DynamicResource FontSizeTitle}" Click="CloseButton_Click"/>
-                </StackPanel>
-            </Grid>
+            <controls:WindowTitleBar Grid.Row="0" Title="Settings"/>
 
             <!-- Content Area with consistent margins and spacing -->
             <ScrollViewer x:Name="SettingsScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -67,13 +52,6 @@
                                                       OffText="Dark"
                                                       SwitchWidth="92"/>
 
-                            <controls:SettingSwitchRow Title="Battery Health Limit"
-                                                      IsChecked="{Binding IsBatteryLimitEnabled, Mode=OneWay}"
-                                                      OnText="80%"
-                                                      OffText="100%"
-                                                      SwitchWidth="92"
-                                                      Command="{Binding ToggleBatteryLimitCommand}"/>
-
                             <controls:SettingSwitchRow Title="Acer Services"
                                                       IsChecked="{Binding IsAcerServicesEnabled, Mode=OneWay}"
                                                       Command="{Binding ToggleAcerServicesDebloaterCommand}"
@@ -81,9 +59,22 @@
                                                       OffText="Disabled"
                                                       SwitchWidth="120"/>
 
+                            <controls:SettingActionRow Title="DTS:X Ultra Settings"
+                                               ActionText="Open"
+                                               Click="SoundSettings_Click"/>
+
+                            <Separator Margin="0,12"/>
+
+                            <controls:SettingSwitchRow Title="Battery Limit"
+                                                      IsChecked="{Binding IsBatteryLimitEnabled, Mode=OneWay}"
+                                                      OnText="80%"
+                                                      OffText="100%"
+                                                      SwitchWidth="92"
+                                                      Command="{Binding ToggleBatteryLimitCommand}"/>
+
                             <!-- BlueLight Shield Dropdown -->
                             <controls:SettingDropdownRow Title="Acer BlueLight Shield"
-                                                         Margin="0,8,0,8"
+                                                         Margin="0,4"
                                                          ItemsSource="{Binding BlueLightShieldModes}"
                                                          SelectedIndex="{Binding BlueLightShieldMode, Mode=TwoWay}"
                                                          DropdownWidth="190"/>
@@ -116,44 +107,6 @@
                                         Value="{Binding UsbChargingPercent, Mode=TwoWay}"
                                         Style="{StaticResource ReferenceBatterySliderStyle}"/>
                             </Grid>
-                        </StackPanel>
-                    </Border>
-
-                    <Separator Margin="0,2,0,20"/>
-
-                    <!-- Section: OpenCore ACPI Power Override -->
-                    <Border Style="{StaticResource OriginalSectionPanelStyle}" CornerRadius="4" Margin="{StaticResource StandardSectionMargin}">
-                        <StackPanel>
-                            <Grid Style="{StaticResource OriginalSectionTitlePanelStyle}">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <controls:ThemedIcon Source="pack://application:,,,/Resources/icons8-processor-32.png" Width="14" Height="14" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                    <TextBlock Text="ACPI Override" Style="{StaticResource OriginalSectionTitleStyle}"/>
-                                </StackPanel>
-                                <TextBlock Grid.Column="1" Text="{Binding AcpiOverrideStatus}" HorizontalAlignment="Right" Margin="8,0,0,0" FontSize="{DynamicResource FontSizeSectionTitle}" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" TextAlignment="Right"/>
-                            </Grid>
-
-                            <controls:SettingActionRow Title="Install to USB Drive"
-                                                       ActionText="Install"
-                                                       Command="{Binding InstallOpenCoreToUsbCommand}"/>
-
-                            <controls:SettingActionRow Title="Install to Boot Drive"
-                                                       ActionText="{Binding BootDriveActionText}"
-                                                       Command="{Binding ToggleOpenCoreBootDriveCommand}"/>
-
-                            <Separator Margin="0,12"/>
-
-                            <controls:SettingActionRow Title="Factory Profile Calibration"
-                                                       ActionText="Calibrate"
-                                                       Command="{Binding CalibrateFactoryProfilesCommand}"
-                                                       IsEnabled="{Binding IsOpenCoreLoaded}"/>
-
-                            <controls:SettingSwitchRow Title="Enable ACPI Override"
-                                                      IsChecked="{Binding IsAcpiOverrideEnabled, Mode=TwoWay}"
-                                                      IsEnabled="{Binding CanEnableAcpiOverride}"/>
                         </StackPanel>
                     </Border>
                 </StackPanel>

@@ -10,6 +10,7 @@ Engineering notes for the PHN16S-71 control paths PreySense actually uses. Start
 | [WMI and services](hardware_wmi_and_services.md) | `AcerGamingFunction`, fans, battery, USB charging, sensors, OEM debloater. Lighting is not on this bus. |
 | [Keyboard and logo RGB](keyboard_rgb_ec.md) | ENEK5130 HID report `0xA4`, 4-zone keyboard, cover logo `0x83`, software engine, cover sync. |
 | [Display and color](display_and_color.md) | Win32 refresh rate, LCD overdrive WMI, BlueLight Shield gamma ramps. |
+| [DTS Custom Audio](dts_custom_audio.md) | Preset labels and the `dtscnt64.dll` controls behind Custom Audio. |
 | [OpenCore ACPI](opencore_acpi_patching.md) | `SSDT-PREYDEV`, PCCC and E3DT patches, hidden `PREYSENSE` partition, BIOS enrollment. |
 | [BIOS setup_var offsets](bios_setup_var_offsets.md) | Verified InsydeH2O Setup offsets on this chassis. |
 

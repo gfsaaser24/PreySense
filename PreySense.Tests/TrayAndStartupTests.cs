@@ -17,6 +17,23 @@ namespace PreySense.Tests
         }
 
         [TestMethod]
+        public void StartupTask_LogonXml_RunsOnBattery()
+        {
+            string xml = StartupTaskService.BuildLogonTaskXml(
+                @"D:\Applications\Prey Sense\PreySense.exe",
+                "S-1-5-21-1-2-3-1001");
+
+            StringAssert.Contains(xml, "<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>");
+            StringAssert.Contains(xml, "<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>");
+            StringAssert.Contains(xml, "<StartWhenAvailable>true</StartWhenAvailable>");
+            StringAssert.Contains(xml, "<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>");
+            StringAssert.Contains(xml, "<LogonType>InteractiveToken</LogonType>");
+            StringAssert.Contains(xml, "<Arguments>--minimized</Arguments>");
+            StringAssert.Contains(xml, @"D:\Applications\Prey Sense\PreySense.exe");
+            Assert.DoesNotContain("<DisallowStartIfOnBatteries>true</DisallowStartIfOnBatteries>", xml);
+        }
+
+        [TestMethod]
         public void Test_TrayIconManager_MessageHandling_And_Dispose()
         {
             bool openCalled = false;

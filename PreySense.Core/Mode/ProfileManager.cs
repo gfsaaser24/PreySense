@@ -29,6 +29,23 @@ namespace PreySense.Mode
             };
         }
 
+        public static readonly string[] SourceProfileNames = { "Quiet", "Balanced", "Performance", "Turbo", "Eco" };
+
+        private static readonly byte[] SourceProfileModes = { 0x00, 0x01, 0x04, 0x05, 0x06 };
+
+        public static int SourceProfileIndex(byte mode) => mode switch
+        {
+            0x00 => 0,
+            0x01 => 1,
+            0x04 => 2,
+            0x05 => 3,
+            0x06 => 4,
+            _ => 1
+        };
+
+        public static byte SourceProfileMode(int index)
+            => index >= 0 && index < SourceProfileModes.Length ? SourceProfileModes[index] : (byte)0x01;
+
         /// <summary>
         /// Loads a performance profile for the given mode from registry.
         /// Returns default values if no saved profile exists.

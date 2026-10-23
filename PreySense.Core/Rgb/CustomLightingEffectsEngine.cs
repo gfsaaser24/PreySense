@@ -1,7 +1,6 @@
 using System;
 using System.Drawing;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,6 +12,7 @@ namespace PreySense.Rgb
     {
         None = 0,
         RainbowCycle = 8,
+        // Retired. Values stay so saved mode indexes do not shift.
         CpuHeatmap = 9,
         BatteryFuelGauge = 10,
         PoliceStrobe = 11,
@@ -48,8 +48,7 @@ namespace PreySense.Rgb
         private bool _isDisposed;
         private int _idleTimeoutSeconds;
         private bool _idleDimmed;
-        private uint _idleDimmedInputTick;
-        private DateTime _idleDimmedUtc;
+        private bool _hardwareTimeoutSuppressed;
         private bool _forceHwDispatch;
         private bool _hasLastFrame;
         private readonly Color[] _lastFrame = new Color[4];
@@ -109,7 +108,8 @@ namespace PreySense.Rgb
         {
             Stop();
 
-            if (mode == CustomEffectMode.None) return;
+            if (mode is CustomEffectMode.None or CustomEffectMode.CpuHeatmap or CustomEffectMode.BatteryFuelGauge)
+                return;
 
             lock (_lock)
             {
@@ -121,6 +121,8 @@ namespace PreySense.Rgb
                 _hasLastFrame = false;
                 _cts = new CancellationTokenSource();
             }
+
+            KeyboardActivity.NoteKeyDown();
 
             _animationTask = Task.Run(() => AnimationLoopAsync(_cts.Token));
             AppLogger.Log($"CustomLightingEffectsEngine: Started effect {mode} (speed={speed}, brightness={brightness}).");
@@ -161,9 +163,8 @@ namespace PreySense.Rgb
         }
 
         /// <summary>
-        /// Custom HID frames keep resetting the EC idle timer. When timeout is
-        /// greater than 0, pause hardware writes and turn the backlight off after
-        /// that many seconds without input.
+        /// Seconds without a keypress before the software effect turns the backlight off.
+        /// Mouse movement and clicks do not count. The EC timeout stays at 0 while an effect is running so animation frames cannot reset it.
         /// </summary>
         public void SetIdleTimeoutSeconds(int seconds)
         {
@@ -171,10 +172,11 @@ namespace PreySense.Rgb
             {
                 _idleTimeoutSeconds = Math.Max(0, seconds);
                 if (_idleTimeoutSeconds == 0)
-                {
                     _idleDimmed = false;
-                }
             }
+
+            if (IsRunning && seconds > 0)
+                SuppressHardwareTimeout();
         }
 
         /// <summary>
@@ -198,6 +200,38 @@ namespace PreySense.Rgb
             }
 
             _animationTask = null;
+            RestoreHardwareTimeout();
+        }
+
+        private void SuppressHardwareTimeout()
+        {
+            bool suppress;
+            lock (_lock)
+            {
+                suppress = _currentMode != CustomEffectMode.None
+                    && _idleTimeoutSeconds > 0
+                    && !_hardwareTimeoutSuppressed;
+                if (suppress)
+                    _hardwareTimeoutSuppressed = true;
+            }
+
+            if (suppress)
+                _wmi.SetLedTimeoutSeconds(0);
+        }
+
+        private void RestoreHardwareTimeout()
+        {
+            int seconds;
+            bool restore;
+            lock (_lock)
+            {
+                restore = _hardwareTimeoutSuppressed;
+                _hardwareTimeoutSuppressed = false;
+                seconds = _idleTimeoutSeconds;
+            }
+
+            if (restore)
+                _wmi.SetLedTimeoutSeconds(seconds);
         }
 
         private async Task AnimationLoopAsync(CancellationToken ct)
@@ -222,16 +256,6 @@ namespace PreySense.Rgb
                     {
                         case CustomEffectMode.RainbowCycle:
                             GenerateRainbowCycleFrame(frame, step);
-                            break;
-
-                        case CustomEffectMode.CpuHeatmap:
-                            GenerateCpuHeatmapFrame(frame, step);
-                            hwThrottleMs = 1000; // Temperature shifts smoothly over seconds
-                            break;
-
-                        case CustomEffectMode.BatteryFuelGauge:
-                            GenerateBatteryFuelFrame(frame);
-                            hwThrottleMs = 2500;
                             break;
 
                         case CustomEffectMode.PoliceStrobe:
@@ -289,32 +313,43 @@ namespace PreySense.Rgb
 
                     if (timeoutSeconds > 0)
                     {
-                        uint lastInputTick = GetLastInputTick();
-                        int idleSeconds = GetIdleSeconds(lastInputTick);
-
-                        if (_idleDimmed)
+                        SuppressHardwareTimeout();
+                        uint lastInputTick = KeyboardActivity.LastKeyTick;
+                        if (GetIdleSeconds(lastInputTick) >= timeoutSeconds)
                         {
-                            bool grace = (DateTime.UtcNow - _idleDimmedUtc).TotalMilliseconds < 500;
-                            if (grace || lastInputTick == _idleDimmedInputTick)
+                            lock (_lock)
                             {
-                                await Task.Delay(frameIntervalMs, ct);
-                                continue;
+                                _idleDimmed = true;
                             }
 
-                            _idleDimmed = false;
-                            lastHwDispatch = 0;
-                            AppLogger.Log("CustomLightingEffectsEngine: backlight restored after input.");
-                        }
-                        else if (idleSeconds >= timeoutSeconds)
-                        {
-                            _idleDimmed = true;
-                            lastHwDispatch = Stopwatch.GetTimestamp();
-                            _idleDimmedUtc = DateTime.UtcNow;
                             _wmi.SetZoneColors(IdleOffFrame, 0);
                             FrameUpdated?.Invoke(IdleOffFrame);
-                            _idleDimmedInputTick = GetLastInputTick();
-                            AppLogger.Log($"CustomLightingEffectsEngine: backlight off after {timeoutSeconds}s idle.");
-                            await Task.Delay(frameIntervalMs, ct);
+                            AppLogger.Log($"CustomLightingEffectsEngine: backlight off after {timeoutSeconds}s idle. Animation stopped.");
+
+                            while (!ct.IsCancellationRequested && !_isDisposed)
+                            {
+                                await Task.Delay(250, ct);
+                                int stillTimeout;
+                                lock (_lock)
+                                {
+                                    stillTimeout = _idleTimeoutSeconds;
+                                }
+
+                                bool keyPressed = KeyboardActivity.LastKeyTick != lastInputTick;
+                                if (stillTimeout <= 0 || keyPressed)
+                                {
+                                    lock (_lock)
+                                    {
+                                        _idleDimmed = false;
+                                    }
+
+                                    lastHwDispatch = 0;
+                                    if (keyPressed)
+                                        AppLogger.Log("CustomLightingEffectsEngine: backlight restored after input.");
+                                    break;
+                                }
+                            }
+
                             continue;
                         }
                     }
@@ -364,69 +399,6 @@ namespace PreySense.Rgb
                 float hue = (float)((step * 48.0 + i * 90.0) % 360.0);
                 frame[i] = HsvToRgb(hue, 1f, 1f);
             }
-        }
-
-        private void GenerateCpuHeatmapFrame(Color[] frame, double step)
-        {
-            int temp = _wmi.CpuTemp;
-            if (temp <= 0) temp = 48; // Baseline fallback if query pending
-
-            Color heatColor;
-            if (temp < 50)
-            {
-                // Calm Cyan (<50°C)
-                heatColor = Color.FromArgb(0, 240, 255);
-            }
-            else if (temp < 72)
-            {
-                // Smooth transition Cyan -> Amber Gold (50-72°C)
-                float t = (temp - 50) / 22f;
-                heatColor = LerpColor(Color.FromArgb(0, 240, 255), Color.FromArgb(255, 183, 3), t);
-            }
-            else
-            {
-                // Combat Crimson Red (>72°C)
-                float t = Math.Clamp((temp - 72) / 18f, 0f, 1f);
-                heatColor = LerpColor(Color.FromArgb(255, 183, 3), Color.FromArgb(255, 17, 34), t);
-            }
-
-            // Gentle organic respiration wave across zones
-            for (int i = 0; i < 4; i++)
-            {
-                double pulse = 0.82 + (Math.Sin(step * 0.8 + (i * 0.5)) * 0.18);
-                frame[i] = ScaleColor(heatColor, (float)pulse);
-            }
-        }
-
-        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
-        private struct SYSTEM_POWER_STATUS
-        {
-            public byte ACLineStatus;
-            public byte BatteryFlag;
-            public byte BatteryLifePercent;
-            public byte SystemStatusFlag;
-            public int BatteryLifeTime;
-            public int BatteryFullLifeTime;
-        }
-
-        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool GetSystemPowerStatus(out SYSTEM_POWER_STATUS lpSystemPowerStatus);
-
-        private void GenerateBatteryFuelFrame(Color[] frame)
-        {
-            int pct = 100;
-            if (GetSystemPowerStatus(out var status) && status.BatteryLifePercent != 255)
-            {
-                pct = status.BatteryLifePercent;
-            }
-
-            Color fuelCol = pct > 50 ? Color.FromArgb(0, 230, 118) : (pct > 20 ? Color.FromArgb(255, 183, 3) : Color.FromArgb(255, 23, 68));
-            Color dimCol = Color.FromArgb(12, 12, 18);
-
-            frame[0] = pct > 5 ? fuelCol : dimCol;   // Zone 1: 0-25%
-            frame[1] = pct >= 25 ? fuelCol : dimCol; // Zone 2: 25-50%
-            frame[2] = pct >= 50 ? fuelCol : dimCol; // Zone 3: 50-75%
-            frame[3] = pct >= 75 ? fuelCol : dimCol; // Zone 4: 75-100%
         }
 
         private void GeneratePoliceStrobeFrame(Color[] frame, int frameCount)
@@ -629,15 +601,6 @@ namespace PreySense.Rgb
 
         #endregion
 
-        private static uint GetLastInputTick()
-        {
-            LASTINPUTINFO info = new()
-            {
-                cbSize = (uint)Marshal.SizeOf<LASTINPUTINFO>()
-            };
-            return GetLastInputInfo(ref info) ? info.dwTime : 0;
-        }
-
         private static int GetIdleSeconds(uint lastInputTick)
         {
             if (lastInputTick == 0)
@@ -646,16 +609,6 @@ namespace PreySense.Rgb
             uint idleMs = unchecked((uint)Environment.TickCount - lastInputTick);
             return (int)(idleMs / 1000);
         }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct LASTINPUTINFO
-        {
-            public uint cbSize;
-            public uint dwTime;
-        }
-
-        [DllImport("user32.dll")]
-        private static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
 
         public void Dispose()
         {

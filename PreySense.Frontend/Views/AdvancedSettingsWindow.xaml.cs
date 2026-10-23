@@ -1,6 +1,5 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
 
 namespace PreySense.Frontend.Views
 {
@@ -12,10 +11,6 @@ namespace PreySense.Frontend.Views
             LanguageSelector.SelectedIndex = Services.LocalizationService.IsChinese ? 1 : 0;
             MaxHeight = SystemParameters.WorkArea.Height - 40;
                 SettingsScroll.MaxHeight = Math.Max(240, MaxHeight - 56);
-            Loaded += (s, e) =>
-            {
-                (DataContext as ViewModels.MainViewModel)?.RefreshOpenCoreStatus();
-            };
         }
 
         private void LanguageSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -24,17 +19,15 @@ namespace PreySense.Frontend.Views
                 Services.LocalizationService.SetLanguage(language);
         }
 
-        private void TitleBar_MouseDown(object sender, MouseButtonEventArgs e)
+        private void SoundSettings_Click(object sender, RoutedEventArgs e)
         {
-            if (e.ChangedButton == MouseButton.Left)
+            var window = new DtsAudioWindow
             {
-                DragMove();
-            }
+                Owner = this,
+                DataContext = DataContext
+            };
+            window.ShowDialog();
         }
 
-        private void CloseButton_Click(object sender, RoutedEventArgs e)
-        {
-            Close();
-        }
     }
 }

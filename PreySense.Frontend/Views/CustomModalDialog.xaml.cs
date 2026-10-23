@@ -1,5 +1,4 @@
 using System.Windows;
-using System.Windows.Input;
 
 namespace PreySense.Frontend.Views
 {
@@ -26,8 +25,8 @@ namespace PreySense.Frontend.Views
 
         public string HeaderSubtitle
         {
-            get => HeaderSubtitleText.Text;
-            set => HeaderSubtitleText.Text = value;
+            get => HeaderBar.Subtitle;
+            set => HeaderBar.Subtitle = value;
         }
 
         public string Message
@@ -61,14 +60,6 @@ namespace PreySense.Frontend.Views
             {
                 CancelButton.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
                 ButtonsPanel.Columns = value ? 2 : 1;
-            }
-        }
-
-        private void TitleBar_MouseDown(object sender, MouseButtonEventArgs e)
-        {
-            if (e.ChangedButton == MouseButton.Left)
-            {
-                DragMove();
             }
         }
 

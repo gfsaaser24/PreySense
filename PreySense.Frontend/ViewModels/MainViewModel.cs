@@ -33,6 +33,8 @@ namespace PreySense.Frontend.ViewModels
 
         public IHardwareService HardwareService => _hw;
 
+        public DtsAudioViewModel Dts { get; }
+
         // Telemetry Properties
         [ObservableProperty] private int _cpuTemp = 45;
         [ObservableProperty] private int _gpuTemp = 40;
@@ -48,6 +50,36 @@ namespace PreySense.Frontend.ViewModels
         [ObservableProperty] private bool _isBusy = false;
 
         private bool? _lastAcState = null;
+        private PowerSourceKind? _lastPowerSource;
+        private PowerSourceKind _currentPowerSource = PowerSourceKind.Ac;
+
+        private void OnPowerSourceChanged(object? sender, EventArgs e)
+        {
+            if (_disposed)
+                return;
+
+            _dispatcher.BeginInvoke(() =>
+            {
+                if (_disposed)
+                    return;
+
+                PowerSourceKind source = _hw.GetPowerSource();
+                bool onAc = source != PowerSourceKind.Battery;
+                _currentPowerSource = source;
+                if (_lastAcState.HasValue && _lastAcState.Value != onAc)
+                {
+                    IsAcConnected = onAc;
+                    NotifyModeSelectionsChanged();
+                    ApplyAutoRefreshForPower(onAc);
+
+                    ApplyGpuBatteryAuto(onAc);
+                }
+
+                _lastAcState = onAc;
+                _lastPowerSource = source;
+                ApplyPowerProfileForSource(source);
+            });
+        }
 
         public MainViewModel(IHardwareService hw)
         {
@@ -56,7 +88,9 @@ namespace PreySense.Frontend.ViewModels
             AttachSessionLifecycleHooks();
 
             _dispatcher = Dispatcher.CurrentDispatcher;
+            Dts = new DtsAudioViewModel(_dispatcher);
             _hw.PowerModeChanged += OnPowerModeChanged;
+            _hw.PowerSourceChanged += OnPowerSourceChanged;
             _turboKeyWatcher = new TurboKeyWatcher();
             _turboKeyWatcher.TurboKeyPressed += OnTurboKeyPressed;
             _turboKeyWatcher.Start();
@@ -281,30 +315,35 @@ namespace PreySense.Frontend.ViewModels
             CpuPackagePowerWatts = t.CpuPkgPowerWatts;
             BatteryPercent = t.BatteryPercent;
             IsAcConnected = t.IsAcConnected;
-            var batteryStatus = $"{Math.Round(t.BatteryPercent)}% ({(t.IsAcConnected ? "AC Attached" : "Discharging")})";
+            _currentPowerSource = t.PowerSource;
+            string sourceLabel = t.PowerSource switch
+            {
+                PowerSourceKind.UsbC => "USB-C",
+                PowerSourceKind.Battery => "Battery",
+                _ => "AC"
+            };
+            var batteryStatus = $"{Math.Round(t.BatteryPercent)}% ({sourceLabel})";
             if (!string.Equals(BatteryStatusText, batteryStatus, StringComparison.Ordinal))
                 BatteryStatusText = batteryStatus;
 
-            if (_lastAcState.HasValue && _lastAcState.Value != t.IsAcConnected)
+            if (_lastPowerSource.HasValue && _lastPowerSource.Value != t.PowerSource)
             {
-                NotifyModeSelectionsChanged();
-                if (IsAutoRefreshRateEnabled)
+                if (_lastAcState != t.IsAcConnected)
                 {
-                    int maxHz = AvailableRefreshRates
-                        .Select(r => int.TryParse(r.Replace("Hz", "").Trim(), out int val) ? val : 0)
-                        .DefaultIfEmpty(240)
-                        .Max();
-                    int targetHz = t.IsAcConnected ? maxHz : 60;
-                    _ = SetRefreshRateAsync(targetHz);
+                    NotifyModeSelectionsChanged();
+                    ApplyAutoRefreshForPower(t.IsAcConnected);
+
+                    ApplyGpuBatteryAuto(t.IsAcConnected);
                 }
 
-                ApplyGpuBatteryAuto(t.IsAcConnected);
+                ApplyPowerProfileForSource(t.PowerSource);
             }
-            else if (!_lastAcState.HasValue)
+            else if (!_lastPowerSource.HasValue)
             {
                 ApplyGpuBatteryAuto(t.IsAcConnected);
             }
             _lastAcState = t.IsAcConnected;
+            _lastPowerSource = t.PowerSource;
         }
 
         public void SetTelemetryPollingActive(bool isVisible)
@@ -376,6 +415,7 @@ namespace PreySense.Frontend.ViewModels
             PersistSessionSettings();
             DetachSessionLifecycleHooks();
             _hw.PowerModeChanged -= OnPowerModeChanged;
+            _hw.PowerSourceChanged -= OnPowerSourceChanged;
             _turboKeyWatcher.TurboKeyPressed -= OnTurboKeyPressed;
             _turboKeyWatcher.BrightnessKeyPressed -= OnBrightnessKeyPressed;
             _turboKeyWatcher.Dispose();
@@ -389,6 +429,7 @@ namespace PreySense.Frontend.ViewModels
                 _modeSwitchDebounceCts = null;
             }
             _modeSwitchGate.Dispose();
+            Dts.DisposeManager();
             _usbChargingDebouncer.Dispose();
             _customFanDebouncer.Dispose();
             _lightingDebouncer.Dispose();

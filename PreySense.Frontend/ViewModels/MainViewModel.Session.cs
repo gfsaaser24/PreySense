@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Win32;
 using PreySense.Core.Acpi;
 using PreySense.Core.Hardware;
+using PreySense.Core.Services;
 using PreySense.Frontend.Services;
 using PreySense.Helpers;
 using PreySense.Mode;
@@ -16,7 +17,6 @@ namespace PreySense.Frontend.ViewModels
         private const string SessionRegistryPath = @"SOFTWARE\PreySense\Session";
         private bool _sessionHooksAttached;
         private bool _isRestoringSession;
-        private bool _hasSavedPowerMode;
         private DateTime _lastSessionRestoreUtc = DateTime.MinValue;
 
         private void AttachSessionLifecycleHooks()
@@ -45,14 +45,16 @@ namespace PreySense.Frontend.ViewModels
             {
                 using var key = Registry.CurrentUser.OpenSubKey(SessionRegistryPath);
                 if (key == null)
+                {
+                    _currentPowerSource = _hw.GetPowerSource();
                     return;
+                }
 
                 if (key.GetValue("PowerMode") is int savedMode)
                 {
                     byte mode = (byte)Math.Clamp(savedMode, 0, 6);
                     if (mode is 0 or 1 or 4 or 5 or 6)
                     {
-                        _hasSavedPowerMode = true;
                         ActivePowerMode = mode;
                         UpdateModeName(mode);
                     }
@@ -74,9 +76,31 @@ namespace PreySense.Frontend.ViewModels
                     IsAcerServicesDebloated = debloated == 1;
                 else if (key.GetValue("AcerServicesEnabled") is int enabled)
                     IsAcerServicesDebloated = enabled == 0;
+
+                _suppressPowerProfile = true;
+                int? legacyPlugged = key.GetValue("UsbCAcPowerMode") is int legacyMode && legacyMode is 0 or 1 or 4 or 5 or 6
+                    ? legacyMode
+                    : null;
+                if (key.GetValue("AcPowerMode") is int acMode && acMode is 0 or 1 or 4 or 5 or 6)
+                    AcPowerModeIndex = ProfileManager.SourceProfileIndex((byte)acMode);
+                else if (legacyPlugged is int legacyAc)
+                    AcPowerModeIndex = ProfileManager.SourceProfileIndex((byte)legacyAc);
+                if (key.GetValue("UsbCPowerMode") is int usbCMode && usbCMode is 0 or 1 or 4 or 5 or 6)
+                    UsbCPowerModeIndex = ProfileManager.SourceProfileIndex((byte)usbCMode);
+                else if (legacyPlugged is int legacyUsb)
+                    UsbCPowerModeIndex = ProfileManager.SourceProfileIndex((byte)legacyUsb);
+                if (key.GetValue("BatteryPowerMode") is int batteryMode && batteryMode is 0 or 1 or 4 or 5 or 6)
+                    BatteryPowerModeIndex = ProfileManager.SourceProfileIndex((byte)batteryMode);
+                if (key.GetValue("BatteryEnergySaver") is int energySaver)
+                    IsBatteryEnergySaverEnabled = energySaver == 1;
+                if (key.GetValue("LastPluggedSource") is int lastPlugged && lastPlugged is 1 or 4)
+                    _hw.NotePluggedSource(lastPlugged == 4 ? PowerSourceKind.UsbC : PowerSourceKind.Ac);
+                _currentPowerSource = _hw.GetPowerSource();
+                _suppressPowerProfile = false;
             }
             catch (Exception ex)
             {
+                _suppressPowerProfile = false;
                 AppLogger.Log($"LoadSessionPreferences: {ex.Message}");
             }
         }
@@ -99,6 +123,12 @@ namespace PreySense.Frontend.ViewModels
                 key.SetValue("BatteryLimit", IsBatteryLimitEnabled ? 1 : 0, RegistryValueKind.DWord);
                 key.SetValue("AcerServicesDisabled", IsAcerServicesDebloated ? 1 : 0, RegistryValueKind.DWord);
                 key.SetValue("AcerServicesEnabled", IsAcerServicesDebloated ? 0 : 1, RegistryValueKind.DWord);
+                key.SetValue("AcPowerMode", (int)ProfileManager.SourceProfileMode(AcPowerModeIndex), RegistryValueKind.DWord);
+                key.SetValue("UsbCPowerMode", (int)ProfileManager.SourceProfileMode(UsbCPowerModeIndex), RegistryValueKind.DWord);
+                key.SetValue("BatteryPowerMode", (int)ProfileManager.SourceProfileMode(BatteryPowerModeIndex), RegistryValueKind.DWord);
+                key.SetValue("BatteryEnergySaver", IsBatteryEnergySaverEnabled ? 1 : 0, RegistryValueKind.DWord);
+                if (_currentPowerSource is PowerSourceKind.Ac or PowerSourceKind.UsbC)
+                    key.SetValue("LastPluggedSource", _currentPowerSource == PowerSourceKind.UsbC ? 4 : 1, RegistryValueKind.DWord);
             }
             catch (Exception ex)
             {
@@ -229,20 +259,29 @@ namespace PreySense.Frontend.ViewModels
                 gateHeld = true;
                 AppLogger.Log($"Restoring PreySense session settings ({reason}).");
                 byte mode = ActivePowerMode;
+                PowerSourceKind source = PowerSourceKind.Ac;
                 await Task.Run(() =>
                 {
-                    if (!_hasSavedPowerMode)
+                    try
                     {
-                        try
-                        {
-                            byte live = _hw.CurrentPowerMode;
-                            if (live is 0 or 1 or 4 or 5 or 6)
-                                mode = live;
-                        }
-                        catch { }
+                        source = _hw.GetPowerSource();
+                    }
+                    catch
+                    {
                     }
 
+                    mode = ProfileManager.SourceProfileMode(source switch
+                    {
+                        PowerSourceKind.UsbC => UsbCPowerModeIndex,
+                        PowerSourceKind.Battery => BatteryPowerModeIndex,
+                        _ => AcPowerModeIndex
+                    });
+                    if (IsBatteryEnergySaverEnabled)
+                        PowerLimitController.SetEnergySaverOnBattery(true);
+
                     ApplyPersistedHardwareSettings(mode);
+                    if (string.Equals(reason, "startup", StringComparison.OrdinalIgnoreCase))
+                        ApplyStartupBatteryRefreshRate();
                 });
 
                 if (string.Equals(reason, "resume", StringComparison.OrdinalIgnoreCase) && OverlayBridge.ShouldRun)
@@ -252,11 +291,9 @@ namespace PreySense.Frontend.ViewModels
                 {
                     if (_disposed)
                         return;
-                    if (!_hasSavedPowerMode)
-                    {
-                        ActivePowerMode = mode;
-                        UpdateModeName(mode);
-                    }
+                    _currentPowerSource = source;
+                    ActivePowerMode = mode;
+                    UpdateModeName(mode);
                     NotifyModeSelectionsChanged();
                     NotifyFanSelectionsChanged();
                     StatusMessage = reason.Equals("startup", StringComparison.OrdinalIgnoreCase)
@@ -337,16 +374,27 @@ namespace PreySense.Frontend.ViewModels
             _hw.SetUsbChargingLevel(UsbChargingPercent);
             _hw.SetBatteryChargeLimit(IsBatteryLimitEnabled ? 1 : 0);
             _hw.SetKbdBacklightTimeoutSeconds(KbdTimeoutSeconds);
+        }
 
-            if (IsAutoRefreshRateEnabled)
+        private void ApplyStartupBatteryRefreshRate()
+        {
+            if (!IsAutoRefreshRateEnabled)
+                return;
+
+            bool onBattery = false;
+            int hz = 0;
+            try
             {
-                int maxHz = AvailableRefreshRates
-                    .Select(r => int.TryParse(r.Replace("Hz", "", StringComparison.OrdinalIgnoreCase).Trim(), out int val) ? val : 0)
-                    .DefaultIfEmpty(240)
-                    .Max();
-                int targetHz = IsAcConnected ? maxHz : 60;
-                _hw.SetDisplayRefreshRate(targetHz);
+                onBattery = !_hw.GetCurrentTelemetry().IsAcConnected;
+                hz = _hw.GetDisplayRefreshRate();
             }
+            catch
+            {
+                return;
+            }
+
+            if (onBattery && hz != 60)
+                _hw.SetDisplayRefreshRate(60);
         }
 
         private void OnSystemPowerModeChanged(object sender, PowerModeChangedEventArgs e)

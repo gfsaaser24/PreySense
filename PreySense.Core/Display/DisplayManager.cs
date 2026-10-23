@@ -130,6 +130,12 @@ namespace PreySense.Helpers
                     return false;
                 }
 
+                if (currentDm.dmDisplayFrequency == hz)
+                {
+                    AppLogger.Log($"DisplayManager: {hz}Hz is already active on {devName ?? "primary"}.");
+                    return true;
+                }
+
                 DEVMODE targetDm = new();
                 targetDm.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE));
                 int modeNum = 0;
@@ -153,11 +159,7 @@ namespace PreySense.Helpers
                     targetDm.dmFields = DM_DISPLAYFREQUENCY | 0x80000 | 0x100000;
                 }
 
-                int result = ChangeDisplaySettingsEx(devName, ref targetDm, IntPtr.Zero, CDS_UPDATEREGISTRY, IntPtr.Zero);
-                if (result != 0)
-                {
-                    result = ChangeDisplaySettingsEx(devName, ref targetDm, IntPtr.Zero, 0, IntPtr.Zero);
-                }
+                int result = ChangeDisplaySettingsEx(devName, ref targetDm, IntPtr.Zero, 0, IntPtr.Zero);
 
                 AppLogger.Log($"DisplayManager: Set refresh rate on {devName} to {hz}Hz, result={result}");
                 return result == 0;

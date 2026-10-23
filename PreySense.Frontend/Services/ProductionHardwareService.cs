@@ -23,6 +23,7 @@ namespace PreySense.Frontend.Services
         private bool? _isBiosDiscreteGpuActive;
 
         public event EventHandler<byte>? PowerModeChanged;
+        public event EventHandler? PowerSourceChanged;
 
         public byte CurrentPowerMode
         {
@@ -51,7 +52,18 @@ namespace PreySense.Frontend.Services
                 return engine;
             }, true);
             _powerMonitor = new Lazy<PdhCpuPowerMonitor>(() => new PdhCpuPowerMonitor(), true);
+            _wmi.PowerSourceChanged += (_, _) =>
+            {
+                lock (_telemetryLock)
+                    _cachedTelemetryTick = 0;
+                PowerSourceChanged?.Invoke(this, EventArgs.Empty);
+            };
+            _wmi.StartPowerSourceWatch();
         }
+
+        public PowerSourceKind GetPowerSource() => _wmi.ReadPowerSource();
+
+        public void NotePluggedSource(PowerSourceKind kind) => _wmi.NotePluggedSource(kind);
 
         public HardwareTelemetry GetCurrentTelemetry()
         {
@@ -67,6 +79,7 @@ namespace PreySense.Frontend.Services
             int cpuRpm = thermal.CpuRpm;
             int gpuRpm = thermal.GpuRpm;
             _wmi.TryGetPowerStatus(out bool onAc, out float batteryPercent);
+            PowerSourceKind source = _wmi.ReadPowerSource();
             float pkgPower = _powerMonitor.Value.GetPackagePowerWatts();
 
             _cachedTelemetry = new HardwareTelemetry(
@@ -79,7 +92,8 @@ namespace PreySense.Frontend.Services
                 BatteryPercent: batteryPercent,
                 IsAcConnected: onAc,
                 BatteryDischargeRateMw: 0,
-                CpuPkgPowerWatts: pkgPower
+                CpuPkgPowerWatts: pkgPower,
+                PowerSource: source
             );
                 _cachedTelemetryTick = now;
                 return _cachedTelemetry;
@@ -244,11 +258,11 @@ namespace PreySense.Frontend.Services
         public void SetKbdBacklightTimeoutSeconds(int seconds)
         {
             _kbdTimeoutSeconds = Math.Max(0, seconds);
-            _wmi.SetLedTimeoutSeconds(_kbdTimeoutSeconds);
+            bool softwareOwnsTimeout = _lightingEngine.IsValueCreated && LightingEngine.IsRunning && _kbdTimeoutSeconds > 0;
+            // Animation frames reset the EC idle timer. While a software effect is running, keep the hardware timeout off.
+            _wmi.SetLedTimeoutSeconds(softwareOwnsTimeout ? 0 : _kbdTimeoutSeconds);
             if (_lightingEngine.IsValueCreated)
-            {
                 LightingEngine.SetIdleTimeoutSeconds(_kbdTimeoutSeconds);
-            }
         }
 
         public int GetUsbChargingLevel() => _wmi.GetUsbChargingLevel();

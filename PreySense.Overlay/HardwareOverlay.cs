@@ -83,6 +83,7 @@ namespace PreySense.Overlay
         private readonly float[] _cpuTempHistory = new float[HistoryLength];
         private readonly float[] _gpuTempHistory = new float[HistoryLength];
         private readonly float[] _cpuClockHistory = new float[HistoryLength];
+        private readonly float[] _eCoreHistory = new float[HistoryLength];
         private readonly float[] _gpuClockHistory = new float[HistoryLength];
         private readonly float[] _cpuPowerHistory = new float[HistoryLength];
         private readonly float[] _gpuPowerHistory = new float[HistoryLength];
@@ -90,7 +91,6 @@ namespace PreySense.Overlay
         private readonly float[] _vramHistory = new float[HistoryLength];
         private readonly float[] _cpuFanHistory = new float[HistoryLength];
         private readonly float[] _gpuFanHistory = new float[HistoryLength];
-        private readonly float[] _cpuVoltageHistory = new float[HistoryLength];
         private readonly float[] _gpuVoltageHistory = new float[HistoryLength];
         private readonly float[] _ramSpeedHistory = new float[HistoryLength];
         private readonly float[] _vramSpeedHistory = new float[HistoryLength];
@@ -119,7 +119,8 @@ namespace PreySense.Overlay
         private bool _wasOwnWindow;
         private bool _keepOverlayAfterUiHide;
         private const int MinGameFps = 6;
-        private readonly string[] _columnTypes = new string[8];
+        private readonly string[] _columnCpu = ["None", "None", "None", "None", "None", "None", "None", "None"];
+        private readonly string[] _columnGpu = ["None", "None", "None", "None", "None", "None", "None", "None"];
         private readonly bool[] _columnGraphs = new bool[8];
         private bool _showFps = true;
 
@@ -286,21 +287,8 @@ namespace PreySense.Overlay
 
             for (int i = 1; i <= 8; i++)
             {
-                string colType = _columnTypes[i - 1];
-                if (colType == "None") continue;
-
-                int colW = colType switch
-                {
-                    "Usage" => S(sc, 22),
-                    "Temperature" => S(sc, 32),
-                    "Clock" => S(sc, 44),
-                    "Power" => S(sc, 38),
-                    "Memory" => S(sc, 32),
-                    "Fan Speed" => S(sc, 50),
-                    "Voltage" => S(sc, 38),
-                    "Memory Speed" => S(sc, 44),
-                    _ => 0
-                };
+                int colW = ColumnWidth(i - 1, sc);
+                if (colW <= 0) continue;
 
                 if (colW > 0)
                 {
@@ -422,62 +410,45 @@ namespace PreySense.Overlay
 
             double gpuTemp = D(HardwareControl.gpuTemp);
             double cpuTemp = D(HardwareControl.cpuTemp);
-            bool gpuActive = gpuTemp > 0;
+            bool gpuActive = HardwareControl.gpuInUse;
 
             _cpuUsage = HardwareControl.cpuUsage;
             _gpuUsage = gpuActive ? (HardwareControl.gpuUsage ?? 0) : 0;
             _ramUsedMb = HardwareControl.ramUsedMb;
             _vramUsedMb = HardwareControl.vramUsedMb;
 
-            bool trackUsage = false, trackTemp = false, trackClock = false, trackPower = false, trackMemory = false, trackFan = false, trackVoltage = false, trackMemSpeed = false;
-            for (int i = 1; i <= 8; i++)
-            {
-                string colType = _columnTypes[i - 1];
-                if (colType == "None") continue;
+            _cpuUsageHistory[_historyHead] = Graphs("Usage", false) ? (_cpuUsage ?? 0) : 0f;
+            _gpuUsageHistory[_historyHead] = Graphs("Usage", true) && gpuActive ? (_gpuUsage ?? 0) : 0f;
 
-                if (_columnGraphs[i - 1])
-                {
-                    switch (colType)
-                    {
-                        case "Usage": trackUsage = true; break;
-                        case "Temperature": trackTemp = true; break;
-                        case "Clock": trackClock = true; break;
-                        case "Power": trackPower = true; break;
-                        case "Memory": trackMemory = true; break;
-                        case "Fan Speed": trackFan = true; break;
-                        case "Voltage": trackVoltage = true; break;
-                        case "Memory Speed": trackMemSpeed = true; break;
-                    }
-                }
-            }
+            _cpuTempHistory[_historyHead] = Graphs("Temperature", false) ? (float)cpuTemp : 0f;
+            _gpuTempHistory[_historyHead] = Graphs("Temperature", true) && gpuActive ? (float)gpuTemp : 0f;
 
-            _cpuUsageHistory[_historyHead] = trackUsage ? (_cpuUsage ?? 0) : 0f;
-            _gpuUsageHistory[_historyHead] = (trackUsage && gpuActive) ? (_gpuUsage ?? 0) : 0f;
+            _cpuClockHistory[_historyHead] = Graphs("P-Core", false) ? (HardwareControl.cpuMhz ?? 0) : 0f;
+            _eCoreHistory[_historyHead] = Graphs("E-Core", false) ? (HardwareControl.eCoreMhz ?? 0) : 0f;
+            _gpuClockHistory[_historyHead] = Graphs("Clock", true) && gpuActive ? (HardwareControl.gpuMhz ?? 0) : 0f;
 
-            _cpuTempHistory[_historyHead] = trackTemp ? (float)cpuTemp : 0f;
-            _gpuTempHistory[_historyHead] = (trackTemp && gpuActive) ? (float)gpuTemp : 0f;
+            _cpuPowerHistory[_historyHead] = Graphs("Power", false) ? (float)Math.Max(0, D(HardwareControl.cpuPower)) : 0f;
+            _gpuPowerHistory[_historyHead] = Graphs("Power", true) && gpuActive ? (float)Math.Max(0, D(HardwareControl.gpuPower)) : 0f;
 
-            _cpuClockHistory[_historyHead] = trackClock ? (HardwareControl.cpuMhz ?? 0) : 0f;
-            _gpuClockHistory[_historyHead] = (trackClock && gpuActive) ? (HardwareControl.gpuMhz ?? 0) : 0f;
+            _ramHistory[_historyHead] = Graphs("Memory", false) ? (float)D(_ramUsedMb) : 0f;
+            _vramHistory[_historyHead] = Graphs("Memory", true) && gpuActive ? (float)D(_vramUsedMb) : 0f;
 
-            _cpuPowerHistory[_historyHead] = trackPower ? (float)Math.Max(0, D(HardwareControl.cpuPower)) : 0f;
-            _gpuPowerHistory[_historyHead] = (trackPower && gpuActive) ? (float)Math.Max(0, D(HardwareControl.gpuPower)) : 0f;
+            _cpuFanHistory[_historyHead] = Graphs("Fan Speed", false) ? (HardwareControl.cpuFanRPM ?? 0) : 0f;
+            _gpuFanHistory[_historyHead] = Graphs("Fan Speed", true) && gpuActive ? (HardwareControl.gpuFanRPM ?? 0) : 0f;
 
-            _ramHistory[_historyHead] = trackMemory ? (float)D(_ramUsedMb) : 0f;
-            _vramHistory[_historyHead] = (trackMemory && gpuActive) ? (float)D(_vramUsedMb) : 0f;
+            _gpuVoltageHistory[_historyHead] = Graphs("Voltage", true) && gpuActive ? (HardwareControl.gpuVoltage ?? 0f) : 0f;
 
-            _cpuFanHistory[_historyHead] = trackFan ? (HardwareControl.cpuFanRPM ?? 0) : 0f;
-            _gpuFanHistory[_historyHead] = (trackFan && gpuActive) ? (HardwareControl.gpuFanRPM ?? 0) : 0f;
-
-            _cpuVoltageHistory[_historyHead] = trackVoltage ? (HardwareControl.cpuVoltage ?? 0f) : 0f;
-            _gpuVoltageHistory[_historyHead] = (trackVoltage && gpuActive) ? (HardwareControl.gpuVoltage ?? 0f) : 0f;
-
-            _ramSpeedHistory[_historyHead] = trackMemSpeed ? (HardwareControl.ramSpeedMhz ?? 0) : 0f;
-            _vramSpeedHistory[_historyHead] = (trackMemSpeed && gpuActive) ? (HardwareControl.vramSpeedMhz ?? 0) : 0f;
+            _ramSpeedHistory[_historyHead] = Graphs("Memory Speed", false) ? (HardwareControl.ramSpeedMhz ?? 0) : 0f;
+            _vramSpeedHistory[_historyHead] = Graphs("Memory Speed", true) && gpuActive ? (HardwareControl.vramSpeedMhz ?? 0) : 0f;
 
             _historyHead = (_historyHead + 1) % HistoryLength;
 
-            bool anyGraph = trackUsage || trackTemp || trackClock || trackPower || trackMemory || trackFan || trackVoltage || trackMemSpeed;
+            bool anyGraph = false;
+            for (int i = 0; i < 8; i++)
+            {
+                if (_columnGraphs[i] && (_columnCpu[i] != "None" || _columnGpu[i] != "None"))
+                    anyGraph = true;
+            }
             if (anyGraph)
             {
                 _lastIdlePaintStamp = int.MinValue;
@@ -499,6 +470,8 @@ namespace PreySense.Overlay
                     HardwareControl.gpuFanRPM,
                     HardwareControl.ramUsage,
                     HardwareControl.vramUsage,
+                    HardwareControl.eCoreMhz,
+                    HardwareControl.gpuVoltage,
                     _currentFps);
                 if (stamp == _lastIdlePaintStamp)
                     return;
@@ -588,21 +561,8 @@ namespace PreySense.Overlay
             int columnsStartX = cursor;
             for (int i = 1; i <= 8; i++)
             {
-                string colType = _columnTypes[i - 1];
-                if (colType == "None") continue;
-
-                int colW = colType switch
-                {
-                    "Usage" => S(sc, 22),
-                    "Temperature" => S(sc, 32),
-                    "Clock" => S(sc, 44),
-                    "Power" => S(sc, 38),
-                    "Memory" => S(sc, 32),
-                    "Fan Speed" => S(sc, 50),
-                    "Voltage" => S(sc, 38),
-                    "Memory Speed" => S(sc, 44),
-                    _ => 0
-                };
+                int colW = ColumnWidth(i - 1, sc);
+                if (colW <= 0) continue;
 
                 if (colW > 0)
                 {
@@ -691,36 +651,20 @@ namespace PreySense.Overlay
 
             for (int i = 1; i <= 8; i++)
             {
-                string colType = _columnTypes[i - 1];
-                if (colType == "None") continue;
+                int colW = ColumnWidth(i - 1, sc);
+                if (colW <= 0) continue;
 
-                int colW = colType switch
+                string cpuMetric = _columnCpu[i - 1];
+                string gpuMetric = _columnGpu[i - 1];
+                DrawMetricColumn(g, font, _unitFont!, rpmFont, sc, cpuMetric, gpuMetric, colCursor, colW, textY, lineH, lineGap);
+                colCursor += colW + colGap;
+
+                if (_columnGraphs[i - 1])
                 {
-                    "Usage" => S(sc, 22),
-                    "Temperature" => S(sc, 32),
-                    "Clock" => S(sc, 44),
-                    "Power" => S(sc, 38),
-                    "Memory" => S(sc, 32),
-                    "Fan Speed" => S(sc, 50),
-                    "Voltage" => S(sc, 38),
-                    "Memory Speed" => S(sc, 44),
-                    _ => 0
-                };
-
-                if (colW > 0)
-                {
-                    DrawMetricColumn(g, font, _unitFont!, rpmFont, sc, colType, colCursor, colW, textY, lineH, lineGap);
-                    colCursor += colW + colGap;
-
-                    bool hasGraph = _columnGraphs[i - 1];
-                    if (hasGraph)
-                    {
-                        int graphGap = S(sc, 6);
-                        var history = GetMetricHistory(colType);
-                        int graphW = S(sc, 72);
-                        OverlayChartRenderer.DrawStackedChart(g, colCursor + graphGap, topY, graphW, graphH, sc, history.cpu, history.gpu, _historyHead, HistoryLength, _basePts, _gpuPts, _cpuPts, _polyPts, _graphGpuBrush, _graphGpuPen, _graphCpuBrush, _graphCpuPen, _totalPen!, _axPen!);
-                        colCursor += graphGap + graphW + colGap;
-                    }
+                    int graphGap = S(sc, 6);
+                    int graphW = S(sc, 72);
+                    OverlayChartRenderer.DrawStackedChart(g, colCursor + graphGap, topY, graphW, graphH, sc, HistoryFor(cpuMetric, false), HistoryFor(gpuMetric, true), _historyHead, HistoryLength, _basePts, _gpuPts, _cpuPts, _polyPts, _graphGpuBrush, _graphGpuPen, _graphCpuBrush, _graphCpuPen, _totalPen!, _axPen!, drawCpu: cpuMetric != "None", drawGpu: gpuMetric != "None");
+                    colCursor += graphGap + graphW + colGap;
                 }
             }
         }
@@ -826,71 +770,52 @@ namespace PreySense.Overlay
                 return totalW;
             }
         }
-        private void DrawMetricColumn(Graphics g, Font font, Font unitFont, Font rpmFont, float sc, string type, float colX, float colW, int textY, int lineH, int lineGap)
+        private void DrawMetricColumn(Graphics g, Font font, Font unitFont, Font rpmFont, float sc, string cpuMetric, string gpuMetric, float colX, float colW, int textY, int lineH, int lineGap)
         {
-            switch (type)
+            DrawMetricValue(g, font, unitFont, rpmFont, sc, cpuMetric, false, colX, colW, textY);
+            DrawMetricValue(g, font, unitFont, rpmFont, sc, gpuMetric, true, colX, colW, textY + lineH + lineGap);
+        }
+
+        private void DrawMetricValue(Graphics g, Font font, Font unitFont, Font rpmFont, float sc, string metric, bool gpu, float colX, float colW, int y)
+        {
+            if (metric == "None")
+                return;
+
+            SolidBrush brush = gpu ? _gpuBrush : _cpuBrush;
+            switch (metric)
             {
                 case "Usage":
-                    {
-                        string cpuText = (_cpuUsage ?? 0) + "%";
-                        string gpuText = (_gpuUsage ?? 0) + "%";
-                        DrawTextWithUnit(g, font, unitFont, cpuText, _cpuBrush, new PointF(colX + colW, textY), alignRight: true);
-                        DrawTextWithUnit(g, font, unitFont, gpuText, _gpuBrush, new PointF(colX + colW, textY + lineH + lineGap), alignRight: true);
-                    }
+                    DrawTextWithUnit(g, font, unitFont, ((gpu ? _gpuUsage : _cpuUsage) ?? 0) + "%", brush, new PointF(colX + colW, y), alignRight: true);
                     break;
                 case "Temperature":
-                    {
-                        string cpuText = FmtTemp(D(HardwareControl.cpuTemp));
-                        string gpuText = FmtTemp(D(HardwareControl.gpuTemp));
-                        DrawTextWithUnit(g, font, unitFont, cpuText, _cpuBrush, new PointF(colX + colW, textY), alignRight: true);
-                        DrawTextWithUnit(g, font, unitFont, gpuText, _gpuBrush, new PointF(colX + colW, textY + lineH + lineGap), alignRight: true);
-                    }
+                    DrawTextWithUnit(g, font, unitFont, FmtTemp(gpu ? D(HardwareControl.gpuTemp) : D(HardwareControl.cpuTemp)), brush, new PointF(colX + colW, y), alignRight: true);
+                    break;
+                case "P-Core":
+                    DrawTextWithUnit(g, font, unitFont, $"{(HardwareControl.cpuMhz ?? 0)}MHz", brush, new PointF(colX + colW, y), alignRight: true);
+                    break;
+                case "E-Core":
+                    DrawTextWithUnit(g, font, unitFont, $"{(HardwareControl.eCoreMhz ?? 0)}MHz", brush, new PointF(colX + colW, y), alignRight: true);
                     break;
                 case "Clock":
-                    {
-                        string cpuText = $"{(HardwareControl.cpuMhz ?? 0)}MHz";
-                        string gpuText = $"{(HardwareControl.gpuMhz ?? 0)}MHz";
-                        DrawTextWithUnit(g, font, unitFont, cpuText, _cpuBrush, new PointF(colX + colW, textY), alignRight: true);
-                        DrawTextWithUnit(g, font, unitFont, gpuText, _gpuBrush, new PointF(colX + colW, textY + lineH + lineGap), alignRight: true);
-                    }
-                    break;
-                case "Power":
-                    {
-                        string cpuText = FmtPow(D(HardwareControl.cpuPower));
-                        string gpuText = FmtPow(D(HardwareControl.gpuPower));
-                        DrawTextWithUnit(g, font, unitFont, cpuText, _cpuBrush, new PointF(colX + colW, textY), alignRight: true);
-                        DrawTextWithUnit(g, font, unitFont, gpuText, _gpuBrush, new PointF(colX + colW, textY + lineH + lineGap), alignRight: true);
-                    }
-                    break;
-                case "Memory":
-                    {
-                        DrawMemGb(g, font, unitFont, (int)colX, (int)colW, textY, _ramUsedMb, _cpuBrush);
-                        DrawMemGb(g, font, unitFont, (int)colX, (int)colW, textY + lineH + lineGap, _vramUsedMb, _gpuBrush);
-                    }
-                    break;
-                case "Fan Speed":
-                    {
-                        string cpuText = FormatFan(HardwareControl.cpuFanRPM);
-                        string gpuText = FormatFan(HardwareControl.gpuFanRPM);
-                        DrawFanSpeed(g, font, rpmFont, cpuText, _cpuBrush, colX, colW, textY, sc);
-                        DrawFanSpeed(g, font, rpmFont, gpuText, _gpuBrush, colX, colW, textY + lineH + lineGap, sc);
-                    }
+                    DrawTextWithUnit(g, font, unitFont, $"{(HardwareControl.gpuMhz ?? 0)}MHz", brush, new PointF(colX + colW, y), alignRight: true);
                     break;
                 case "Voltage":
-                    {
-                        string cpuText = HardwareControl.cpuVoltage > 0 ? $"{HardwareControl.cpuVoltage.Value:F3}v" : "0.000v";
-                        string gpuText = HardwareControl.gpuVoltage > 0 ? $"{HardwareControl.gpuVoltage.Value:F3}v" : "0.000v";
-                        DrawTextWithUnit(g, font, unitFont, cpuText, _cpuBrush, new PointF(colX + colW, textY), alignRight: true);
-                        DrawTextWithUnit(g, font, unitFont, gpuText, _gpuBrush, new PointF(colX + colW, textY + lineH + lineGap), alignRight: true);
-                    }
+                    string volts = HardwareControl.gpuVoltage > 0 ? $"{HardwareControl.gpuVoltage.Value:F3}v" : "0.000v";
+                    DrawTextWithUnit(g, font, unitFont, volts, brush, new PointF(colX + colW, y), alignRight: true);
+                    break;
+                case "Power":
+                    DrawTextWithUnit(g, font, unitFont, FmtPow(gpu ? D(HardwareControl.gpuPower) : D(HardwareControl.cpuPower)), brush, new PointF(colX + colW, y), alignRight: true);
+                    break;
+                case "Memory":
+                    DrawMemGb(g, font, unitFont, (int)colX, (int)colW, y, gpu ? _vramUsedMb : _ramUsedMb, brush);
                     break;
                 case "Memory Speed":
-                    {
-                        string cpuText = $"{(HardwareControl.ramSpeedMhz ?? 0)}MHz";
-                        string gpuText = $"{(HardwareControl.vramSpeedMhz ?? 0)}MHz";
-                        DrawTextWithUnit(g, font, unitFont, cpuText, _cpuBrush, new PointF(colX + colW, textY), alignRight: true);
-                        DrawTextWithUnit(g, font, unitFont, gpuText, _gpuBrush, new PointF(colX + colW, textY + lineH + lineGap), alignRight: true);
-                    }
+                    int? speed = gpu ? HardwareControl.vramSpeedMhz : HardwareControl.ramSpeedMhz;
+                    DrawTextWithUnit(g, font, unitFont, $"{(speed ?? 0)}MHz", brush, new PointF(colX + colW, y), alignRight: true);
+                    break;
+                case "Fan Speed":
+                    int? fan = gpu ? HardwareControl.gpuFanRPM : HardwareControl.cpuFanRPM;
+                    DrawFanSpeed(g, font, rpmFont, FormatFan(fan), brush, colX, colW, y, sc);
                     break;
             }
         }
@@ -907,21 +832,49 @@ namespace PreySense.Overlay
             g.DrawString(fanNum, font, brush, new PointF(numX, y), sf);
         }
 
-        private (float[] cpu, float[] gpu) GetMetricHistory(string type)
+        private int ColumnWidth(int index, float sc)
         {
-            return type switch
-            {
-                "Usage" => (_cpuUsageHistory, _gpuUsageHistory),
-                "Temperature" => (_cpuTempHistory, _gpuTempHistory),
-                "Clock" => (_cpuClockHistory, _gpuClockHistory),
-                "Power" => (_cpuPowerHistory, _gpuPowerHistory),
-                "Memory" => (_ramHistory, _vramHistory),
-                "Fan Speed" => (_cpuFanHistory, _gpuFanHistory),
-                "Voltage" => (_cpuVoltageHistory, _gpuVoltageHistory),
-                "Memory Speed" => (_ramSpeedHistory, _vramSpeedHistory),
-                _ => (EmptyHistory, EmptyHistory)
-            };
+            int width = Math.Max(MetricWidth(_columnCpu[index]), MetricWidth(_columnGpu[index]));
+            return width == 0 ? 0 : S(sc, width);
         }
+
+        private static int MetricWidth(string metric) => metric switch
+        {
+            "Usage" => 22,
+            "Temperature" => 32,
+            "P-Core" or "E-Core" or "Clock" or "Voltage" or "Memory Speed" => 44,
+            "Power" => 38,
+            "Memory" => 32,
+            "Fan Speed" => 50,
+            _ => 0
+        };
+
+        private bool Graphs(string metric, bool gpu)
+        {
+            for (int i = 0; i < 8; i++)
+            {
+                if (!_columnGraphs[i])
+                    continue;
+                if ((gpu ? _columnGpu[i] : _columnCpu[i]) == metric)
+                    return true;
+            }
+            return false;
+        }
+
+        private float[] HistoryFor(string metric, bool gpu) => metric switch
+        {
+            "Usage" => gpu ? _gpuUsageHistory : _cpuUsageHistory,
+            "Temperature" => gpu ? _gpuTempHistory : _cpuTempHistory,
+            "P-Core" => _cpuClockHistory,
+            "E-Core" => _eCoreHistory,
+            "Clock" => _gpuClockHistory,
+            "Voltage" => _gpuVoltageHistory,
+            "Power" => gpu ? _gpuPowerHistory : _cpuPowerHistory,
+            "Memory" => gpu ? _vramHistory : _ramHistory,
+            "Memory Speed" => gpu ? _vramSpeedHistory : _ramSpeedHistory,
+            "Fan Speed" => gpu ? _gpuFanHistory : _cpuFanHistory,
+            _ => EmptyHistory
+        };
 
         private void PositionAtTopLeft()
         {
@@ -1206,9 +1159,11 @@ namespace PreySense.Overlay
 
         private void LoadDisplayConfiguration()
         {
-            for (int i = 1; i <= _columnTypes.Length; i++)
+            for (int i = 1; i <= _columnCpu.Length; i++)
             {
-                _columnTypes[i - 1] = AppConfig.GetString($"overlay_col_{i}", AppConfig.DefaultOverlayColumn(i));
+                var pair = AppConfig.ParseOverlayColumn(AppConfig.GetString($"overlay_col_{i}", AppConfig.DefaultOverlayColumn(i)));
+                _columnCpu[i - 1] = pair.Cpu;
+                _columnGpu[i - 1] = pair.Gpu;
                 _columnGraphs[i - 1] = AppConfig.Get($"overlay_col_{i}_graph", i == 5 ? 1 : 0) == 1;
             }
             _showFps = AppConfig.Get("overlay_show_fps", 1) == 1;

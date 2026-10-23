@@ -54,7 +54,7 @@ namespace PreySense.Frontend.ViewModels
             App.SuppressAutoHide = true;
             var dialog = new Views.CustomModalDialog
             {
-                Owner = Application.Current.Windows.OfType<Views.AdvancedSettingsWindow>().FirstOrDefault(window => window.IsVisible)
+                Owner = Application.Current.Windows.OfType<Views.AdvancedWindow>().FirstOrDefault(window => window.IsVisible)
                     ?? Application.Current.MainWindow,
                 Title = "PreySense • Factory Power Limits",
                 HeaderSubtitle = " • Factory Power Limits",
@@ -801,7 +801,7 @@ namespace PreySense.Frontend.ViewModels
 
                     var dialog = new Views.CustomModalDialog
                     {
-                        Owner = Application.Current.Windows.OfType<Views.AdvancedSettingsWindow>().FirstOrDefault(window => window.IsVisible)
+                        Owner = Application.Current.Windows.OfType<Views.AdvancedWindow>().FirstOrDefault(window => window.IsVisible)
                             ?? Application.Current.MainWindow,
                         Title = "PreySense • OpenCore USB",
                         HeaderSubtitle = " • OpenCore USB",

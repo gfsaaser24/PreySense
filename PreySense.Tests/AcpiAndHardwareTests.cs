@@ -646,26 +646,28 @@ namespace PreySense.Tests
         [TestMethod]
         public void LhmDriver_ExtractsToProgramDataNotExeDirectory()
         {
-            string source = File.ReadAllText(Path.Combine(GetSolutionRoot(), "PreySense.Overlay", "LhmDriverLocator.cs"));
+            string source = File.ReadAllText(Path.Combine(GetSolutionRoot(), "PreySense.Overlay", "WinRing0Cleanup.cs"));
+            string overlayProject = File.ReadAllText(Path.Combine(GetSolutionRoot(), "PreySense.Overlay", "PreySense.Overlay.csproj"));
             Assert.Contains("CommonApplicationData", source);
-            Assert.Contains("RelocateBeforeOpen", source);
-            Assert.Contains("WinRing0x64", source);
-            Assert.Contains("src.Position = 1", source);
-            Assert.Contains(@"\\.\WinRing0_1_2_0", source);
+            Assert.Contains("WinRing0x64.sys", source);
+            Assert.Contains("R0PreySense", source);
+            Assert.Contains("sc.exe", source);
+            Assert.DoesNotContain("create \"", source);
+            Assert.DoesNotContain("LibreHardwareMonitor", overlayProject);
             string hardware = File.ReadAllText(Path.Combine(GetSolutionRoot(), "PreySense.Overlay", "HardwareControl.cs"));
-            Assert.Contains("LhmDriverLocator.RelocateBeforeOpen", hardware);
-            Assert.Contains("WinRing0 device is not ready", hardware);
+            Assert.Contains("WinRing0Cleanup.RemoveInstalledDriver", hardware);
+            Assert.DoesNotContain("LibreHardwareMonitor", hardware);
+            Assert.DoesNotContain("LhmDriverLocator", hardware);
             Assert.Contains("PdhCpuPowerMonitor", hardware);
             Assert.Contains("cpuPower = GetCPUPower()", hardware);
             Assert.DoesNotContain("cpuPower = null", hardware);
-            Assert.Contains("_lhmCpuClock > 0", hardware);
             Assert.Contains("TrySampleFrequencies", hardware);
             Assert.Contains("IsDiscreteGpuInUse()", hardware);
-            int gpuGate = hardware.IndexOf("IsDiscreteGpuInUse()", StringComparison.Ordinal);
-            int nvmlTemp = hardware.IndexOf("NvmlHelper.GetGpuTemperature", StringComparison.Ordinal);
-            Assert.IsTrue(gpuGate >= 0 && nvmlTemp > gpuGate, "Overlay must check that the dGPU is in use before opening NVML.");
-            Assert.Contains("NvmlHelper.GetGpuTemperature", hardware);
-            Assert.Contains("ReadCurrentTemperature", hardware);
+            Assert.Contains("thermal.GpuTemp", hardware);
+            Assert.Contains("if (!inUse)", hardware);
+            Assert.Contains("gpuTemp = 0", hardware);
+            Assert.DoesNotContain("NvmlHelper.GetGpuTemperature", hardware);
+            Assert.DoesNotContain("ReadCurrentTemperature", hardware);
             Assert.DoesNotContain("GpuControl.GetCurrentTemperature()", hardware);
             Assert.Contains("_lastCpuUsage", hardware);
 
@@ -679,10 +681,14 @@ namespace PreySense.Tests
         {
             string source = File.ReadAllText(Path.Combine(GetSolutionRoot(), "PreySense.Core", "Rgb", "CustomLightingEffectsEngine.cs"));
             Assert.Contains("SetIdleTimeoutSeconds", source);
-            Assert.Contains("GetLastInputInfo", source);
+            Assert.Contains("KeyboardActivity.LastKeyTick", source);
+            Assert.Contains("KeyboardActivity.NoteKeyDown", source);
+            Assert.DoesNotContain("GetLastInputInfo", source);
+            string hook = File.ReadAllText(Path.Combine(GetSolutionRoot(), "PreySense.Frontend", "Services", "KeyboardHook.cs"));
+            Assert.Contains("KeyboardActivity.NoteKeyDown", hook);
             Assert.Contains("IdleOffFrame", source);
-            Assert.Contains("_idleDimmedInputTick", source);
-            Assert.Contains("lastInputTick == _idleDimmedInputTick", source);
+            Assert.Contains("SetLedTimeoutSeconds(0)", source);
+            Assert.Contains("Animation stopped.", source);
             Assert.Contains("writeNow = !_idleDimmed && IsRunning && _hasLastFrame", source);
             Assert.Contains("TryCopyLastFrame", source);
         }
@@ -1104,7 +1110,7 @@ namespace PreySense.Tests
             Assert.Contains("ShowCancelButton = false", acpiVm);
             Assert.Contains("Task.Run", acpiVm);
 
-            string advancedXaml = File.ReadAllText(Path.Combine(root, "PreySense.Frontend", "Views", "AdvancedSettingsWindow.xaml"));
+            string advancedXaml = File.ReadAllText(Path.Combine(root, "PreySense.Frontend", "Views", "AdvancedWindow.xaml"));
             Assert.Contains("Factory Profile Calibration", advancedXaml);
             Assert.Contains("CalibrateFactoryProfilesCommand", advancedXaml);
             Assert.Contains("IsEnabled=\"{Binding CanEnableAcpiOverride}\"", advancedXaml);
@@ -1287,6 +1293,7 @@ namespace PreySense.Tests
 
             // Verify supported refresh rates are loaded into dropdown items
             Assert.IsTrue(vm.AvailableRefreshRates.Count >= 3, "AvailableRefreshRates must contain supported modes");
+            Assert.AreEqual("240 Hz", vm.AvailableRefreshRates[0]);
             CollectionAssert.Contains(vm.AvailableRefreshRates, "60 Hz");
             CollectionAssert.Contains(vm.AvailableRefreshRates, "120 Hz");
             CollectionAssert.Contains(vm.AvailableRefreshRates, "240 Hz");
@@ -1399,10 +1406,14 @@ namespace PreySense.Tests
             string vm = File.ReadAllText(Path.Combine(root, "PreySense.Frontend", "ViewModels", "MainViewModel.cs"));
             string lightingUi = File.ReadAllText(Path.Combine(root, "PreySense.Frontend", "Views", "KeyboardWindow.xaml.cs"));
 
-            Assert.AreEqual("Memory Speed", PreySense.Overlay.AppConfig.DefaultOverlayColumn(7));
-            Assert.AreEqual("Fan Speed", PreySense.Overlay.AppConfig.DefaultOverlayColumn(8));
+            Assert.AreEqual("P-Core|Clock", PreySense.Overlay.AppConfig.DefaultOverlayColumn(3));
+            Assert.AreEqual("E-Core|Voltage", PreySense.Overlay.AppConfig.DefaultOverlayColumn(4));
+            Assert.AreEqual("Memory Speed|Memory Speed", PreySense.Overlay.AppConfig.DefaultOverlayColumn(7));
+            Assert.AreEqual("Fan Speed|Fan Speed", PreySense.Overlay.AppConfig.DefaultOverlayColumn(8));
             Assert.Contains("PollIntervalMs = 1000", overlay);
             Assert.DoesNotContain("ApplyPollInterval", overlay);
+            Assert.Contains("bool gpuActive = HardwareControl.gpuInUse", overlay);
+            Assert.DoesNotContain("gpuTemp > 0", overlay);
             Assert.Contains("VisibleTelemetryIntervalMs = 1000", vm);
             Assert.DoesNotContain("HiddenTelemetryIntervalMs", vm);
             string session = File.ReadAllText(Path.Combine(root, "PreySense.Frontend", "ViewModels", "MainViewModel.Session.cs"));
@@ -1634,8 +1645,10 @@ namespace PreySense.Tests
             Assert.DoesNotContain("ToggleColdBootHealer", File.ReadAllText(Path.Combine(root, "PreySense.Frontend", "ViewModels", "MainViewModel.Services.cs")));
             Assert.Contains("private void TickCore()", overlay);
             Assert.Contains("Interlocked.Exchange(ref _tickRunning, 1)", overlay);
-            Assert.Contains("NvidiaGpuControl.Shared", File.ReadAllText(Path.Combine(root, "PreySense.Overlay", "HardwareControl.cs")));
-            Assert.Contains("private static readonly object _lhmLock", File.ReadAllText(Path.Combine(root, "PreySense.Overlay", "HardwareControl.cs")));
+            string hardwareControl = File.ReadAllText(Path.Combine(root, "PreySense.Overlay", "HardwareControl.cs"));
+            Assert.Contains("NvidiaGpuControl.Shared", hardwareControl);
+            Assert.DoesNotContain("LibreHardwareMonitor", hardwareControl);
+            Assert.Contains("TrySampleFrequencies", hardwareControl);
             Assert.DoesNotContain("HardwareControl.Warmup();", overlay[..overlay.IndexOf("public void StartOverlay()", StringComparison.Ordinal)]);
             Assert.DoesNotContain("Thread.Sleep", wmiSrc);
             Assert.DoesNotContain("_readTask?.Wait(500)", File.ReadAllText(Path.Combine(root, "PreySense.Core", "Gpu", "NvidiaGpuControl.cs")));

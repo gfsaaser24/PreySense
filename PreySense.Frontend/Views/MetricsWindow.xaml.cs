@@ -1,7 +1,6 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
 using Microsoft.Win32;
 using PreySense.Frontend.Services;
 using PreySense.Overlay;
@@ -11,9 +10,30 @@ namespace PreySense.Frontend.Views
     public partial class MetricsWindow : Window
     {
         private const string RegistryKeyPath = @"SOFTWARE\PreySense";
-        private static readonly string[] MetricOptions =
+        private static readonly MetricChoice[] CpuChoices =
         {
-            "None", "Usage", "Temperature", "Clock", "Power", "Memory", "Fan Speed", "Voltage", "Memory Speed"
+            new("None", "None"),
+            new("Usage", "CPU Usage"),
+            new("Temperature", "CPU Temperature"),
+            new("P-Core", "CPU P-Core"),
+            new("E-Core", "CPU E-Core"),
+            new("Power", "CPU Power"),
+            new("Memory", "CPU Memory"),
+            new("Memory Speed", "CPU Memory Speed"),
+            new("Fan Speed", "CPU Fan")
+        };
+
+        private static readonly MetricChoice[] GpuChoices =
+        {
+            new("None", "None"),
+            new("Usage", "GPU Usage"),
+            new("Temperature", "GPU Temperature"),
+            new("Clock", "GPU Clock"),
+            new("Voltage", "GPU Voltage"),
+            new("Power", "GPU Power"),
+            new("Memory", "GPU Memory"),
+            new("Memory Speed", "GPU Memory Speed"),
+            new("Fan Speed", "GPU Fan")
         };
         private static readonly string[] HorizontalPositions = { "Left", "Center", "Right" };
         private static readonly string[] VerticalPositions = { "Top", "Center", "Bottom" };
@@ -56,19 +76,6 @@ namespace PreySense.Frontend.Views
                 Apply();
             else
                 _ = Dispatcher.BeginInvoke(Apply);
-        }
-
-        private void TitleBar_MouseDown(object sender, MouseButtonEventArgs e)
-        {
-            if (e.ChangedButton == MouseButton.Left)
-            {
-                DragMove();
-            }
-        }
-
-        private void CloseButton_Click(object sender, RoutedEventArgs e)
-        {
-            Close();
         }
 
         private static int GetRegInt(string keyName, int defaultValue)
@@ -186,8 +193,8 @@ namespace PreySense.Frontend.Views
                 bool hasGraph = GetRegInt(graphKey, defaultGraph) == 1;
 
                 var row = new Grid { Margin = new Thickness(0, 3, 0, 3) };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(140) });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
                 var label = new TextBlock
@@ -197,22 +204,44 @@ namespace PreySense.Frontend.Views
                     FontSize = bodyFontSize
                 };
 
-                var combo = new ComboBox
+                var pair = AppConfig.ParseOverlayColumn(currentVal);
+                var cpuCombo = new ComboBox
                 {
-                    ItemsSource = MetricOptions,
-                    SelectedItem = currentVal,
+                    ItemsSource = CpuChoices,
+                    SelectedItem = CpuChoices.FirstOrDefault(choice => choice.Id == pair.Cpu) ?? CpuChoices[0],
+                    Width = 168,
                     Height = 28,
-                    Margin = new Thickness(4, 0, 8, 0),
+                    Margin = new Thickness(0, 0, 4, 0),
                     FontSize = bodyFontSize
                 };
-                combo.SelectionChanged += (s, e) =>
+                var gpuCombo = new ComboBox
                 {
-                    if (!_isInitializing && combo.SelectedItem is string selected)
-                    {
-                        SetRegString(configKey, selected);
-                        HardwareOverlayManager.RefreshDisplayFlags();
-                    }
+                    ItemsSource = GpuChoices,
+                    SelectedItem = GpuChoices.FirstOrDefault(choice => choice.Id == pair.Gpu) ?? GpuChoices[0],
+                    Width = 168,
+                    Height = 28,
+                    Margin = new Thickness(0),
+                    FontSize = bodyFontSize
                 };
+                var dropdowns = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                dropdowns.Children.Add(cpuCombo);
+                dropdowns.Children.Add(gpuCombo);
+                void SaveColumn()
+                {
+                    if (_isInitializing)
+                        return;
+                    string cpu = (cpuCombo.SelectedItem as MetricChoice)?.Id ?? "None";
+                    string gpu = (gpuCombo.SelectedItem as MetricChoice)?.Id ?? "None";
+                    SetRegString(configKey, cpu + "|" + gpu);
+                    HardwareOverlayManager.RefreshDisplayFlags();
+                }
+                cpuCombo.SelectionChanged += (_, _) => SaveColumn();
+                gpuCombo.SelectionChanged += (_, _) => SaveColumn();
 
                 var checkGraph = new Controls.RectangularSwitch
                 {
@@ -220,6 +249,7 @@ namespace PreySense.Frontend.Views
                     OffText = "○",
                     Width = 56,
                     Height = 28,
+                    Margin = new Thickness(8, 0, 0, 0),
                     IsChecked = hasGraph,
                     VerticalAlignment = VerticalAlignment.Center
                 };
@@ -239,14 +269,13 @@ namespace PreySense.Frontend.Views
                         HardwareOverlayManager.RefreshDisplayFlags();
                     }
                 };
+                dropdowns.Children.Add(checkGraph);
 
                 Grid.SetColumn(label, 0);
-                Grid.SetColumn(combo, 1);
-                Grid.SetColumn(checkGraph, 2);
+                Grid.SetColumn(dropdowns, 2);
 
                 row.Children.Add(label);
-                row.Children.Add(combo);
-                row.Children.Add(checkGraph);
+                row.Children.Add(dropdowns);
 
                 PanelColumnsContainer.Children.Add(row);
             }
@@ -344,6 +373,13 @@ namespace PreySense.Frontend.Views
             int value = (int)Math.Round(SliderHudScale.Value / 25.0) * 25;
             SetRegInt("overlay_scale_percent", value);
             HardwareOverlayManager.RefreshDisplayFlags();
+        }
+
+        private sealed class MetricChoice(string id, string label)
+        {
+            public string Id { get; } = id;
+            public string Label { get; } = label;
+            public override string ToString() => Label;
         }
 
         private void SaveOpacity()

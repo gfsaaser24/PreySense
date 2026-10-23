@@ -46,6 +46,21 @@ namespace PreySense.Mode
         /// This is the exact method G-Helper uses to disable CPU Boost and drastically save battery.
         /// 0 = Disabled, 1 = Enabled, 2 = Aggressive, 3 = Efficient Enabled, 4 = Efficient Aggressive
         /// </summary>
+        public static int EnergySaverBatteryThreshold(bool enabled) => enabled ? 100 : 0;
+
+        /// <summary>
+        /// Windows applies this DC threshold only while the laptop is on battery.
+        /// 100 turns Energy Saver on for the whole battery session. 0 leaves it off.
+        /// USB-C and the AC adapter both count as plugged in, so this stays off there.
+        /// </summary>
+        public static void SetEnergySaverOnBattery(bool enabled)
+        {
+            int threshold = EnergySaverBatteryThreshold(enabled);
+            RunPowerCfg($"-setdcvalueindex scheme_current sub_energysaver esbattthreshold {threshold}");
+            RunPowerCfg("-setactive scheme_current");
+            AppLogger.Log($"Windows Energy Saver on battery: {(enabled ? "on" : "off")} (threshold {threshold}).");
+        }
+
         public static void SetCpuBoost(int value)
         {
             RunPowerCfg($"-setacvalueindex scheme_current sub_processor perfboostmode {value}");

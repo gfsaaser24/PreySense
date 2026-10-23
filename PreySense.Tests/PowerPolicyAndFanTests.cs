@@ -1,5 +1,7 @@
 using System.IO;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using PreySense.Core.Services;
+using PreySense.Helpers;
 using PreySense.Mode;
 
 namespace PreySense.Tests
@@ -116,6 +118,37 @@ namespace PreySense.Tests
             Assert.AreEqual(45, EcFanPolicy.SnapDuty(47));
             Assert.AreEqual(50, EcFanPolicy.SnapDuty(48));
             Assert.AreEqual(100, EcFanPolicy.SnapDuty(99));
+        }
+
+        [TestMethod]
+        public void SourceProfiles_MapUsbCAndBatteryModes()
+        {
+            Assert.AreEqual(0x01, ProfileManager.SourceProfileMode(1));
+            Assert.AreEqual(0x06, ProfileManager.SourceProfileMode(4));
+            Assert.AreEqual(1, ProfileManager.SourceProfileIndex(0x01));
+            Assert.AreEqual(4, ProfileManager.SourceProfileIndex(0x06));
+            Assert.AreEqual("Eco", ProfileManager.SourceProfileNames[4]);
+
+            string xaml = File.ReadAllText(Path.Combine(GetSolutionRoot(), "PreySense.Frontend", "Views", "AdvancedWindow.xaml"));
+            Assert.Contains("Power Profile", xaml);
+            Assert.Contains("Title=\"AC\"", xaml);
+            Assert.Contains("Title=\"USB-C\"", xaml);
+            Assert.Contains("Title=\"Battery\"", xaml);
+            Assert.Contains("Windows Energy Saver", xaml);
+            Assert.Contains("AcPowerModeIndex", xaml);
+            Assert.Contains("UsbCPowerModeIndex", xaml);
+            Assert.Contains("BatteryPowerModeIndex", xaml);
+            Assert.DoesNotContain("IsPowerProfileSwitchEnabled", xaml);
+
+            Assert.IsTrue(WmiController.TryParseAcerPowerEvent(new byte[] { 8, 0 }, out PowerSourceKind battery));
+            Assert.AreEqual(PowerSourceKind.Battery, battery);
+            Assert.IsTrue(WmiController.TryParseAcerPowerEvent(new byte[] { 8, 1 }, out PowerSourceKind ac));
+            Assert.AreEqual(PowerSourceKind.Ac, ac);
+            Assert.IsTrue(WmiController.TryParseAcerPowerEvent(new byte[] { 8, 4 }, out PowerSourceKind usbC));
+            Assert.AreEqual(PowerSourceKind.UsbC, usbC);
+            Assert.IsFalse(WmiController.TryParseAcerPowerEvent(new byte[] { 1, 1 }, out _));
+            Assert.AreEqual(100, PowerLimitController.EnergySaverBatteryThreshold(true));
+            Assert.AreEqual(0, PowerLimitController.EnergySaverBatteryThreshold(false));
         }
 
         private static string GetSolutionRoot()

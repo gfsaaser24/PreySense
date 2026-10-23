@@ -15,6 +15,10 @@ namespace PreySense.Core.Services
         public byte CurrentPowerMode => _powerMode;
 
         public event EventHandler<byte>? PowerModeChanged;
+        public event EventHandler? PowerSourceChanged { add { } remove { } }
+
+        public PowerSourceKind GetPowerSource() => PowerSourceKind.Ac;
+        public void NotePluggedSource(PowerSourceKind kind) { }
 
         public HardwareTelemetry GetCurrentTelemetry()
         {

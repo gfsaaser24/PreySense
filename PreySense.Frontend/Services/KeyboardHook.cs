@@ -142,6 +142,8 @@ namespace PreySense.Frontend.Services
             if (nCode >= 0)
             {
                 bool isKeyDown = wParam == (IntPtr)WM_KEYDOWN || wParam == (IntPtr)WM_SYSKEYDOWN;
+                if (isKeyDown)
+                    PreySense.Helpers.KeyboardActivity.NoteKeyDown();
                 bool isKeyUp = wParam == (IntPtr)WM_KEYUP || wParam == (IntPtr)WM_SYSKEYUP;
 
                 if (isKeyDown || isKeyUp)

@@ -32,13 +32,15 @@ namespace PreySense.Overlay
             SolidBrush graphCpuBrush,
             Pen graphCpuPen,
             Pen totalPen,
-            Pen axPen)
+            Pen axPen,
+            bool drawCpu = true,
+            bool drawGpu = true)
         {
             float peak = 10f;
             for (int i = 0; i < historyLength; i++)
             {
-                if (cpuHistory[i] > peak) peak = cpuHistory[i];
-                if (gpuHistory[i] > peak) peak = gpuHistory[i];
+                if (drawCpu && cpuHistory[i] > peak) peak = cpuHistory[i];
+                if (drawGpu && gpuHistory[i] > peak) peak = gpuHistory[i];
             }
 
             float stepX = (float)w / (historyLength - 1);
@@ -59,10 +61,16 @@ namespace PreySense.Overlay
             var saved = g.Save();
             g.SetClip(new RectangleF(x, y, w, h));
 
-            FillArea(g, polyPts, gpuPts, basePts, graphGpuBrush);
-            g.DrawLines(graphGpuPen, gpuPts);
-            FillArea(g, polyPts, cpuPts, basePts, graphCpuBrush);
-            g.DrawLines(graphCpuPen, cpuPts);
+            if (drawGpu)
+            {
+                FillArea(g, polyPts, gpuPts, basePts, graphGpuBrush);
+                g.DrawLines(graphGpuPen, gpuPts);
+            }
+            if (drawCpu)
+            {
+                FillArea(g, polyPts, cpuPts, basePts, graphCpuBrush);
+                g.DrawLines(graphCpuPen, cpuPts);
+            }
 
             g.Restore(saved);
             g.DrawLine(axPen, x, y + h, x + w, y + h);

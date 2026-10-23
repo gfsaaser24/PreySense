@@ -65,7 +65,13 @@ namespace PreySense.Frontend.ViewModels
                     supportedRates = new System.Collections.Generic.List<int> { 60, 120, 240 };
 
                 _isUpdatingRefreshRateSelection = true;
-                string[] nextRates = supportedRates.Distinct().OrderBy(r => r).Select(r => $"{r} Hz").ToArray();
+                if (hwRate > 0)
+                    CurrentRefreshRate = hwRate;
+
+                var orderedRates = supportedRates.Distinct().ToList();
+                if (CurrentRefreshRate > 0 && !orderedRates.Contains(CurrentRefreshRate))
+                    orderedRates.Add(CurrentRefreshRate);
+                string[] nextRates = orderedRates.OrderByDescending(r => r).Select(r => $"{r} Hz").ToArray();
                 if (!AvailableRefreshRates.SequenceEqual(nextRates))
                 {
                     AvailableRefreshRates.Clear();
@@ -77,12 +83,7 @@ namespace PreySense.Frontend.ViewModels
                 Is120HzSupported = supportedRates.Contains(120);
                 Is240HzSupported = supportedRates.Contains(240);
 
-                if (hwRate > 0)
-                    CurrentRefreshRate = hwRate;
-
                 SelectedRefreshRateOption = $"{CurrentRefreshRate} Hz";
-                if (!AvailableRefreshRates.Contains(SelectedRefreshRateOption) && AvailableRefreshRates.Count > 0)
-                    AvailableRefreshRates.Add(SelectedRefreshRateOption);
 
                 DisplayPanelInfo = $"{CurrentRefreshRate}Hz" + (IsLcdOverdriveEnabled ? " • Overdrive" : "");
                 NotifyRefreshRateChanged();
@@ -138,7 +139,7 @@ namespace PreySense.Frontend.ViewModels
                 string s when int.TryParse(s.Replace("Hz", "").Trim(), out int parsed) => parsed,
                 _ => 0
             };
-            if (hz <= 0) return;
+            if (hz <= 0 || hz == CurrentRefreshRate) return;
 
             CurrentRefreshRate = hz;
             _isUpdatingRefreshRateSelection = true;
@@ -160,16 +161,26 @@ namespace PreySense.Frontend.ViewModels
         {
             IsAutoRefreshRateEnabled = !IsAutoRefreshRateEnabled;
             PersistSessionSettings();
-            StatusMessage = IsAutoRefreshRateEnabled ? "Auto Refresh Rate: Enabled (Max Hz AC / 60Hz Battery)" : "Auto Refresh Rate: Disabled";
-            if (IsAutoRefreshRateEnabled)
-            {
-                int maxHz = AvailableRefreshRates
-                    .Select(r => int.TryParse(r.Replace("Hz", "").Trim(), out int val) ? val : 0)
-                    .DefaultIfEmpty(240)
-                    .Max();
-                int targetHz = IsAcConnected ? maxHz : 60;
-                _ = SetRefreshRateAsync(targetHz);
-            }
+            StatusMessage = IsAutoRefreshRateEnabled
+                ? "Auto Refresh Rate: 60 Hz on battery, highest rate when plugged in"
+                : "Auto Refresh Rate: Disabled";
+        }
+
+        internal void ApplyAutoRefreshForPower(bool onExternalPower)
+        {
+            if (!IsAutoRefreshRateEnabled)
+                return;
+
+            int targetHz = onExternalPower ? HighestRefreshRate() : 60;
+            _ = SetRefreshRateAsync(targetHz);
+        }
+
+        private int HighestRefreshRate()
+        {
+            return AvailableRefreshRates
+                .Select(r => int.TryParse(r.Replace("Hz", "", StringComparison.OrdinalIgnoreCase).Trim(), out int val) ? val : 0)
+                .DefaultIfEmpty(240)
+                .Max();
         }
 
         [RelayCommand]

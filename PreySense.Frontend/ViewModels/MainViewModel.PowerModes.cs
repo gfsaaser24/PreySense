@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PreySense.Core.Acpi;
+using PreySense.Core.Services;
 using PreySense.Frontend.Views;
 using PreySense.Mode;
 
@@ -31,6 +32,15 @@ namespace PreySense.Frontend.ViewModels
         public string EcoOrQuietModeName => IsAcConnected ? "Quiet" : "Eco";
         public string EcoOrQuietModeParam => IsAcConnected ? "0" : "6";
 
+        public IReadOnlyList<string> SourceProfileNames => ProfileManager.SourceProfileNames;
+
+        [ObservableProperty] private int _acPowerModeIndex = ProfileManager.SourceProfileIndex(0x01);
+        [ObservableProperty] private int _usbCPowerModeIndex = ProfileManager.SourceProfileIndex(0x01);
+        [ObservableProperty] private int _batteryPowerModeIndex = ProfileManager.SourceProfileIndex(0x06);
+        [ObservableProperty] private bool _isBatteryEnergySaverEnabled;
+
+        private bool _suppressPowerProfile;
+
         // CPU Boost Mode (0=Disabled, 1=Enabled)
         [ObservableProperty] private int _cpuBoostMode = 1; // Enabled default
         [ObservableProperty] private string _cpuBoostModeName = "Enabled";
@@ -48,6 +58,8 @@ namespace PreySense.Frontend.ViewModels
             if (mode == 0xFF) return;
             if (mode == PeekPendingOrActiveMode())
                 return;
+
+            RememberSourceProfile(mode);
 
             ActivePowerMode = mode;
             UpdateModeName(mode);
@@ -199,6 +211,89 @@ namespace PreySense.Frontend.ViewModels
                 IsBusy = false;
                 PersistSessionSettings();
             }
+        }
+
+        internal void ApplyPowerProfileForSource(PowerSourceKind source)
+        {
+            if (_suppressPowerProfile || _isRestoringSession || _disposed)
+                return;
+
+            byte mode = ProfileManager.SourceProfileMode(ProfileIndexFor(source));
+            if (PeekPendingOrActiveMode() == mode)
+                return;
+
+            _ = ApplyModeSwitchAsync(mode);
+        }
+
+        private int ProfileIndexFor(PowerSourceKind source) => source switch
+        {
+            PowerSourceKind.UsbC => UsbCPowerModeIndex,
+            PowerSourceKind.Battery => BatteryPowerModeIndex,
+            _ => AcPowerModeIndex
+        };
+
+        private void RememberSourceProfile(byte mode)
+        {
+            if (_suppressPowerProfile)
+                return;
+
+            int index = ProfileManager.SourceProfileIndex(mode);
+            _suppressPowerProfile = true;
+            switch (_currentPowerSource)
+            {
+                case PowerSourceKind.UsbC:
+                    if (UsbCPowerModeIndex != index)
+                        UsbCPowerModeIndex = index;
+                    break;
+                case PowerSourceKind.Battery:
+                    if (BatteryPowerModeIndex != index)
+                        BatteryPowerModeIndex = index;
+                    break;
+                default:
+                    if (AcPowerModeIndex != index)
+                        AcPowerModeIndex = index;
+                    break;
+            }
+            _suppressPowerProfile = false;
+        }
+
+        partial void OnAcPowerModeIndexChanged(int value)
+        {
+            if (_suppressPowerProfile || value < 0)
+                return;
+
+            PersistSessionSettings();
+            if (_currentPowerSource == PowerSourceKind.Ac)
+                ApplyPowerProfileForSource(PowerSourceKind.Ac);
+        }
+
+        partial void OnUsbCPowerModeIndexChanged(int value)
+        {
+            if (_suppressPowerProfile || value < 0)
+                return;
+
+            PersistSessionSettings();
+            if (_currentPowerSource == PowerSourceKind.UsbC)
+                ApplyPowerProfileForSource(PowerSourceKind.UsbC);
+        }
+
+        partial void OnBatteryPowerModeIndexChanged(int value)
+        {
+            if (_suppressPowerProfile || value < 0)
+                return;
+
+            PersistSessionSettings();
+            if (_currentPowerSource == PowerSourceKind.Battery)
+                ApplyPowerProfileForSource(PowerSourceKind.Battery);
+        }
+
+        partial void OnIsBatteryEnergySaverEnabledChanged(bool value)
+        {
+            if (_suppressPowerProfile)
+                return;
+
+            PersistSessionSettings();
+            PowerLimitController.SetEnergySaverOnBattery(value);
         }
 
         private void NotifyModeSelectionsChanged()

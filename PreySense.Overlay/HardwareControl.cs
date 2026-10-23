@@ -21,6 +21,8 @@ namespace PreySense.Overlay
 
         public static float? cpuTemp = -1;
         public static float? gpuTemp = -1;
+        /// <summary>True when the discrete GPU is confirmed in use. Temperature is not used as proof of that.</summary>
+        public static bool gpuInUse;
 
         public static float? cpuPower;
         public static float? gpuPower;
@@ -37,8 +39,8 @@ namespace PreySense.Overlay
 
         // Extra metrics
         public static int?   cpuMhz;
+        public static int?   eCoreMhz;
         public static int?   gpuMhz;
-        public static float? cpuVoltage;
         public static float? gpuVoltage;
         public static int?   ramSpeedMhz;
         public static int?   vramSpeedMhz;
@@ -46,50 +48,9 @@ namespace PreySense.Overlay
         private static readonly PdhCpuFrequencyMonitor _pdhMonitor = new();
         private static readonly PdhCpuPowerMonitor _pdhPowerMonitor = new();
 
-        private static readonly object _lhmLock = new();
-        private static readonly LibreHardwareMonitor.Hardware.Computer _lhm = new()
-        {
-            IsCpuEnabled = true,
-            IsGpuEnabled = false,
-            IsNetworkEnabled = false,
-            IsStorageEnabled = false,
-            IsMotherboardEnabled = false,
-            IsControllerEnabled = false,
-            IsMemoryEnabled = false
-        };
-        private static bool _lhmOpened = false;
-        private static float? _lhmCpuTemp;
-        private static float? _lhmCpuPower;
-        private static float _lhmCpuClock;
         private static int? _lastCpuUsage;
         private static long _lastSlowSensorTick;
         private const int SlowSensorIntervalMs = 1000;
-
-        private static void EnsureLhmOpen()
-        {
-            if (_lhmOpened) return;
-            lock (_lhmLock)
-            {
-                if (_lhmOpened) return;
-                try
-                {
-                    if (!LhmDriverLocator.RelocateBeforeOpen())
-                    {
-                        AppLogger.Log("LibreHardwareMonitor Open skipped: WinRing0 device is not ready. Not writing PreySense.sys next to the exe.");
-                        LhmDriverLocator.DeleteSidecarIfPresent();
-                        return;
-                    }
-
-                    _lhm.Open();
-                    _lhmOpened = true;
-                    LhmDriverLocator.DeleteSidecarIfPresent();
-                }
-                catch (Exception ex)
-                {
-                    AppLogger.Log("LibreHardwareMonitor Open failed: " + ex.Message);
-                }
-            }
-        }
 
         static HardwareControl()
         {
@@ -156,88 +117,25 @@ namespace PreySense.Overlay
 
         public static void Warmup()
         {
-            EnsureLhmOpen();
-        }
-
-        private static void RefreshLhmCpuSensors()
-        {
-            EnsureLhmOpen();
-            cpuVoltage = null;
-            _lhmCpuTemp = null;
-            _lhmCpuPower = null;
-            _lhmCpuClock = 0;
-
-            if (!_lhmOpened)
-            {
-                return;
-            }
-
-            lock (_lhmLock)
-            {
-            foreach (var hardware in _lhm.Hardware)
-            {
-                hardware.Update();
-                if (hardware.HardwareType != LibreHardwareMonitor.Hardware.HardwareType.Cpu)
-                {
-                    continue;
-                }
-
-                foreach (var sensor in hardware.Sensors)
-                {
-                    if (!sensor.Value.HasValue)
-                    {
-                        continue;
-                    }
-
-                    if (sensor.SensorType == LibreHardwareMonitor.Hardware.SensorType.Clock &&
-                        sensor.Name.StartsWith("CPU Core", StringComparison.OrdinalIgnoreCase) &&
-                        sensor.Value.Value > _lhmCpuClock)
-                    {
-                        _lhmCpuClock = sensor.Value.Value;
-                    }
-                    else if (sensor.SensorType == LibreHardwareMonitor.Hardware.SensorType.Voltage)
-                    {
-                        if (sensor.Name.IndexOf("Core", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            sensor.Name.IndexOf("Vcore", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            sensor.Name.IndexOf("VID", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            cpuVoltage == null)
-                        {
-                            cpuVoltage = sensor.Value.Value;
-                        }
-                    }
-                    else if (sensor.SensorType == LibreHardwareMonitor.Hardware.SensorType.Temperature &&
-                             (sensor.Name.IndexOf("Package", StringComparison.OrdinalIgnoreCase) >= 0 || _lhmCpuTemp == null))
-                    {
-                        _lhmCpuTemp = sensor.Value.Value;
-                    }
-                    else if (sensor.SensorType == LibreHardwareMonitor.Hardware.SensorType.Power &&
-                             (sensor.Name.IndexOf("Package", StringComparison.OrdinalIgnoreCase) >= 0 || _lhmCpuPower == null))
-                    {
-                        _lhmCpuPower = sensor.Value.Value;
-                    }
-                }
-            }
-            }
+            WinRing0Cleanup.RemoveInstalledDriver();
         }
 
         public static int GetCpuMhz()
         {
             try
             {
-                RefreshLhmCpuSensors();
-                if (_lhmCpuClock > 0)
+                eCoreMhz = 0;
+                if (_pdhMonitor.TrySampleFrequencies(out int pdhMaxMhz, out _, out _, out int eCoreMaxMhz))
                 {
-                    return (int)Math.Round(_lhmCpuClock);
-                }
-
-                if (_pdhMonitor.TrySampleFrequencies(out int pdhMaxMhz, out _, out _) && pdhMaxMhz > 0)
-                {
-                    return pdhMaxMhz;
+                    if (eCoreMaxMhz > 0)
+                        eCoreMhz = eCoreMaxMhz;
+                    if (pdhMaxMhz > 0)
+                        return pdhMaxMhz;
                 }
             }
             catch (Exception ex)
             {
-                AppLogger.Log("Error in LHM GetCpuMhz and Volts: " + ex.Message);
+                AppLogger.Log("GetCpuMhz failed: " + ex.Message);
             }
             return 0;
         }
@@ -260,7 +158,7 @@ namespace PreySense.Overlay
                 AppLogger.Log("GetCPUPower PDH failed: " + ex.Message);
             }
 
-            return _lhmCpuPower is > 0f ? _lhmCpuPower : null;
+            return null;
         }
 
         private static long _cpuLastIdle, _cpuLastKernel, _cpuLastUser, _cpuLastTick;
@@ -316,7 +214,9 @@ namespace PreySense.Overlay
             var wmi = WmiProvider?.Invoke() ?? (_fallbackWmi ??= new WmiController());
             var nvidia = GpuControl as NvidiaGpuControl;
             // NVML init wakes a dGPU in D3/RTD3 and holds it there. Skip it unless the GPU is already in use.
-            bool gpuInUse = nvidia is null || nvidia.IsDiscreteGpuInUse();
+            // Overlay temperature is the EC sensor from the thermal batch. NVML stays for clocks, power, and usage.
+            bool inUse = nvidia is null || nvidia.IsDiscreteGpuInUse();
+            gpuInUse = inUse;
 
             long now = Environment.TickCount64;
             bool slowSensors = _lastSlowSensorTick == 0 || now - _lastSlowSensorTick >= SlowSensorIntervalMs;
@@ -330,7 +230,7 @@ namespace PreySense.Overlay
                     cpuFanRPM = thermal.CpuRpm;
                     gpuFanRPM = thermal.GpuRpm;
                     cpuTemp = thermal.CpuTemp;
-                    if (gpuInUse)
+                    if (inUse)
                         gpuTemp = thermal.GpuTemp;
                 }
                 else
@@ -338,33 +238,15 @@ namespace PreySense.Overlay
                     cpuFanRPM = null;
                     gpuFanRPM = null;
                     cpuTemp = -1;
-                }
-
-                if (cpuTemp <= 0 && _lhmCpuTemp.HasValue && _lhmCpuTemp.Value > 0)
-                    cpuTemp = _lhmCpuTemp.Value;
-
-                if (!gpuInUse)
-                {
-                    int? idleTemp = null;
-                    try { idleTemp = nvidia?.ReadCurrentTemperature(); }
-                    catch { idleTemp = null; }
-                    gpuTemp = idleTemp is > 0 ? idleTemp.Value : 0;
-                }
-                else
-                {
-                    if (wmi == null)
+                    if (inUse)
                         gpuTemp = -1;
-
-                    int? liveGpuTemp = NvmlHelper.GetGpuTemperature();
-                    if (liveGpuTemp is null or <= 0)
-                    {
-                        try { liveGpuTemp = nvidia?.ReadCurrentTemperature(); }
-                        catch { liveGpuTemp = null; }
-                    }
-                    if (liveGpuTemp is > 0)
-                        gpuTemp = liveGpuTemp.Value;
                 }
+
             }
+
+            // A cached EC value can outlive GPU power-down. Show 0 until the GPU is confirmed in use again.
+            if (!inUse)
+                gpuTemp = 0;
 
             cpuUsage = GetCPUUsage();
 
@@ -372,7 +254,7 @@ namespace PreySense.Overlay
             ramUsage = ram?.percent;
             ramUsedMb = ram?.usedMb;
 
-            if (!gpuInUse)
+            if (!inUse)
             {
                 gpuUsage = null;
                 vramUsedMb = null;

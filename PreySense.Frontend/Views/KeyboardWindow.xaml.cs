@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
 using PreySense.Frontend.ViewModels;
 
 namespace PreySense.Frontend.Views
@@ -214,19 +213,6 @@ namespace PreySense.Frontend.Views
                     ? Visibility.Visible
                     : Visibility.Collapsed;
             }
-        }
-
-        private void TitleBar_MouseDown(object sender, MouseButtonEventArgs e)
-        {
-            if (e.ChangedButton == MouseButton.Left)
-            {
-                DragMove();
-            }
-        }
-
-        private void CloseButton_Click(object sender, RoutedEventArgs e)
-        {
-            Close();
         }
 
         private void Zone1_Click(object sender, RoutedEventArgs e)

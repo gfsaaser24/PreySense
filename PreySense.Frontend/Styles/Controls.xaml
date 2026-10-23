@@ -624,14 +624,15 @@
     <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
     <Setter Property="Padding" Value="10,6" />
     <Setter Property="MinHeight" Value="30" />
-    <Setter Property="HorizontalAlignment" Value="Stretch" />
-    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
     <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="{x:Type ComboBoxItem}">
-          <Border Name="border" HorizontalAlignment="Stretch" Background="{TemplateBinding Control.Background}" Padding="{TemplateBinding Control.Padding}">
-            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Stretch" TextElement.Foreground="{TemplateBinding Foreground}" />
+          <Border Name="border" MinWidth="{Binding ViewportWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}" Background="{TemplateBinding Control.Background}" Padding="{TemplateBinding Control.Padding}">
+            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" TextElement.Foreground="{TemplateBinding Foreground}" />
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="UIElement.IsMouseOver" Value="True">
@@ -663,25 +664,31 @@
     <Setter Property="HorizontalAlignment" Value="Right" />
     <Setter Property="OverridesDefaultStyle" Value="True" />
     <Setter Property="MaxDropDownHeight" Value="360" />
-    <Setter Property="ScrollViewer.CanContentScroll" Value="False" />
+    <Setter Property="ScrollViewer.CanContentScroll" Value="True" />
+    <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
+    <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling" />
+    <Setter Property="VirtualizingPanel.ScrollUnit" Value="Pixel" />
     <Setter Property="ItemContainerStyle" Value="{StaticResource {x:Type ComboBoxItem}}" />
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="{x:Type ComboBox}">
           <Grid Name="MainGrid" SnapsToDevicePixels="true">
-            <Popup Name="PART_Popup" AllowsTransparency="true" Placement="Bottom" PlacementTarget="{Binding ElementName=MainGrid}" PopupAnimation="Slide" IsOpen="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}}">
-              <Border Name="DropDownBorder" BorderThickness="1" CornerRadius="4" Background="{DynamicResource WindowBgBrush}" BorderBrush="{DynamicResource BorderMainBrush}" Width="{Binding ActualWidth, ElementName=MainGrid}" SnapsToDevicePixels="True">
+            <Popup Name="PART_Popup" AllowsTransparency="True" Placement="Bottom" PlacementTarget="{Binding ElementName=MainGrid}" PopupAnimation="None" IsOpen="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}}">
+              <Border Name="DropDownBorder" BorderThickness="1" CornerRadius="4" Background="{DynamicResource WindowBgBrush}" BorderBrush="{DynamicResource BorderMainBrush}" Width="{Binding ActualWidth, ElementName=MainGrid}" MaxWidth="{Binding ActualWidth, ElementName=MainGrid}" SnapsToDevicePixels="True">
+                <Border.RenderTransform>
+                  <TranslateTransform x:Name="DropDownShift" Y="0"/>
+                </Border.RenderTransform>
                 <Border.Resources>
                   <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource {x:Type ScrollBar}}">
                     <Setter Property="Margin" Value="-8,3,1,3" />
                   </Style>
                 </Border.Resources>
                 <UIElement.Effect>
-                  <DropShadowEffect Color="{DynamicResource ShadowColor}" BlurRadius="12" ShadowDepth="3" Opacity="0.5" />
+                  <DropShadowEffect Color="{DynamicResource ShadowColor}" BlurRadius="8" ShadowDepth="1" Opacity="0.35" RenderingBias="Performance" />
                 </UIElement.Effect>
                 <ScrollViewer Name="DropDownScrollViewer"
                               MaxHeight="{TemplateBinding ComboBox.MaxDropDownHeight}"
-                              CanContentScroll="False"
+                              CanContentScroll="True"
                               Focusable="False"
                               Padding="0"
                               HorizontalScrollBarVisibility="Disabled"
@@ -736,6 +743,26 @@
               </Control.Template>
             </ToggleButton>
           </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsDropDownOpen" Value="True">
+              <Trigger.EnterActions>
+                <BeginStoryboard>
+                  <Storyboard>
+                    <DoubleAnimation Storyboard.TargetName="DropDownBorder" Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.11"/>
+                    <DoubleAnimation Storyboard.TargetName="DropDownShift" Storyboard.TargetProperty="Y" From="-6" To="0" Duration="0:0:0.11" DecelerationRatio="0.7"/>
+                  </Storyboard>
+                </BeginStoryboard>
+              </Trigger.EnterActions>
+              <Trigger.ExitActions>
+                <BeginStoryboard>
+                  <Storyboard>
+                    <DoubleAnimation Storyboard.TargetName="DropDownBorder" Storyboard.TargetProperty="Opacity" To="1" Duration="0"/>
+                    <DoubleAnimation Storyboard.TargetName="DropDownShift" Storyboard.TargetProperty="Y" To="0" Duration="0"/>
+                  </Storyboard>
+                </BeginStoryboard>
+              </Trigger.ExitActions>
+            </Trigger>
+          </ControlTemplate.Triggers>
         </ControlTemplate>
       </Setter.Value>
     </Setter>

@@ -65,6 +65,7 @@ namespace PreySense.Core.Services
             "PreySense",
             "Psched",
             "IntcAzAudAddService",
+            "DtsApo4Service",
             "AcerApplicationBaseDriver_Device"
         };
 

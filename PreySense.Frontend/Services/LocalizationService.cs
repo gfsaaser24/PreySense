@@ -27,7 +27,7 @@ public static class LocalizationService
         ["Static"] = "静态", ["Dynamic"] = "动态", ["Brightness"] = "亮度", ["Backlight Timeout"] = "背光超时", ["Sync All Zones"] = "同步所有区域",
         ["Preset Themes"] = "预设主题", ["None"] = "无", ["Zone 1"] = "区域 1", ["Zone 2"] = "区域 2", ["Zone 3"] = "区域 3", ["Zone 4"] = "区域 4",
         ["Breathing"] = "呼吸", ["Neon"] = "霓虹", ["Neon Wave"] = "霓虹波浪", ["Color Wave"] = "彩色波浪", ["Ripple"] = "涟漪", ["Zoom"] = "缩放", ["Snake"] = "贪吃蛇", ["Disco"] = "迪斯科",
-        ["Rainbow Cycle"] = "彩虹循环", ["CPU Heatmap"] = "CPU 热力图", ["Battery Fuel Gauge"] = "电量指示", ["Police Strobe"] = "警灯闪烁",
+        ["Rainbow Cycle"] = "彩虹循环", ["Police Strobe"] = "警灯闪烁",
         ["Fire Ember"] = "余烬", ["Matrix Cascade"] = "矩阵瀑布", ["Cylon Scanner"] = "扫描灯", ["Aurora Drift"] = "极光漂移",
         ["Ocean Tide"] = "海洋潮汐", ["Heartbeat"] = "心跳", ["Lightning Storm"] = "雷暴", ["Starlight"] = "星光", ["Ice Crystal"] = "冰晶",
         ["Predator"] = "Predator", ["Cyberpunk"] = "赛博朋克", ["Fire & Ice"] = "冰与火", ["Matrix"] = "矩阵", ["Stealth"] = "隐秘",
@@ -40,8 +40,10 @@ public static class LocalizationService
         ["Sustained Long Power [PL1]"] = "持续功耗 [PL1]", ["Short Burst Power [PL2]"] = "短时突发功耗 [PL2]", ["Burst Peak Power [PL2]"] = "峰值突发功耗 [PL2]",
         ["CPU Boost"] = "CPU 睿频", ["Burst Window [Tau]"] = "突发时间窗口 [Tau]", ["Thermal Trip Point [WMG3]"] = "温度保护点 [WMG3]", ["GPU Thermal Trip Point [WMG3]"] = "GPU 温度保护点 [WMG3]",
         ["Reset"] = "重置", ["Apply"] = "应用", ["Save"] = "保存", ["Cancel"] = "取消", ["Install"] = "安装", ["Uninstall"] = "卸载", ["Quit"] = "退出",
-        ["Advanced"] = "高级", ["Run on Windows Startup"] = "随 Windows 启动", ["Theme"] = "主题", ["Light"] = "浅色", ["Dark"] = "深色",
-        ["Battery Health Limit"] = "电池健康限制", ["Acer Services"] = "Acer 服务", ["Enabled"] = "已启用", ["Disabled"] = "已禁用",
+        ["Advanced"] = "高级", ["Settings"] = "设置", ["Tuning"] = "调校", ["Equalizer"] = "均衡器", ["Custom Audio"] = "自定义音频",
+        ["PreySense • Advanced"] = "PreySense • 高级", ["PreySense • Custom Audio"] = "PreySense • 自定义音频", ["PreySense • Equalizer"] = "PreySense • 均衡器",
+        ["Run on Windows Startup"] = "随 Windows 启动", ["Theme"] = "主题", ["Light"] = "浅色", ["Dark"] = "深色",
+        ["Battery Limit"] = "电池健康限制", ["Acer Services"] = "Acer 服务", ["Enabled"] = "已启用", ["Disabled"] = "已禁用",
         ["Acer BlueLight Shield"] = "Acer 蓝光护盾", ["LCD Overdrive"] = "LCD 响应加速", ["USB Power-Off Charging"] = "关机 USB 充电",
         ["ACPI Override"] = "ACPI 覆盖", ["Enable ACPI Override"] = "启用 ACPI 覆盖",
         ["OpenCore Active"] = "OpenCore 已激活", ["OpenCore Not Loaded"] = "OpenCore 未加载",
@@ -124,6 +126,12 @@ public static class LocalizationService
                 Apply(row, SettingActionRow.TitleProperty); Apply(row, SettingActionRow.DescriptionProperty); Apply(row, SettingActionRow.ActionTextProperty); return;
             case SettingValueRow row:
                 Apply(row, SettingValueRow.TitleProperty); return;
+            case WindowTitleBar bar:
+                Apply(bar, WindowTitleBar.TitleProperty);
+                Apply(bar, WindowTitleBar.SubtitleProperty);
+                if (bar.Actions is DependencyObject actions)
+                    LocalizeTree(actions);
+                return;
             case LabeledTabSwitcher tabs:
                 Apply(tabs, LabeledTabSwitcher.LeftTextProperty); Apply(tabs, LabeledTabSwitcher.RightTextProperty); return;
             case TextBlock text when !BindingOperations.IsDataBound(text, TextBlock.TextProperty): Apply(text, TextBlock.TextProperty); break;

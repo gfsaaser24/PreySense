@@ -27,22 +27,7 @@
             <!-- ============================================== -->
             <!-- 0. TITLE BAR                                   -->
             <!-- ============================================== -->
-            <Grid Grid.Row="0" Style="{DynamicResource WindowTitleBarStyle}" MouseDown="TitleBar_MouseDown">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
-                    <Image Source="pack://application:,,,/appicon.ico" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                    <TextBlock Text="PreySense" Style="{DynamicResource WindowTitleTextStyle}"/>
-                    <TextBlock Text=" • Mode" Style="{DynamicResource WindowSubtitleTextStyle}"/>
-                </StackPanel>
-
-                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Stretch">
-                    <Button Style="{StaticResource TitleBarCloseButtonStyle}" Content="✕" FontSize="{DynamicResource FontSizeTitle}" Click="CloseButton_Click"/>
-                </StackPanel>
-            </Grid>
+            <controls:WindowTitleBar Grid.Row="0" Title="Tuning"/>
 
             <!-- ============================================== -->
             <!-- 1. ACPI HARDWARE OVERRIDE DISABLED BANNER      -->

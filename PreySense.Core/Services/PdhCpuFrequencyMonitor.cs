@@ -52,6 +52,7 @@ namespace PreySense.Core.Services
         private bool _isInitialized = false;
         private bool _isDisposed = false;
         private readonly uint[] _coreNominalMhz;
+        private readonly bool[] _isECore;
 
         public bool IsAvailable => _isInitialized && _hQuery != IntPtr.Zero;
         public int CoreCount => _coreCounters.Count;
@@ -66,6 +67,7 @@ namespace PreySense.Core.Services
                 _coreNominalMhz[i] = ppi[i].MaxMhz > 0 ? ppi[i].MaxMhz : 2700; // Fallback to 2700MHz if 0
             }
 
+            _isECore = BuildECoreMap(_coreNominalMhz.Length);
             InitializePdh();
         }
 
@@ -112,10 +114,11 @@ namespace PreySense.Core.Services
         /// Returns (MaxCoreMhz, AverageCoreMhz, PerCoreMhz).
         /// If PDH is unavailable, returns false.
         /// </summary>
-        public bool TrySampleFrequencies(out int maxMhz, out int avgMhz, out int[] coreMhz)
+        public bool TrySampleFrequencies(out int maxMhz, out int avgMhz, out int[] coreMhz, out int eCoreMaxMhz)
         {
             maxMhz = 0;
             avgMhz = 0;
+            eCoreMaxMhz = 0;
             coreMhz = Array.Empty<int>();
 
             if (!_isInitialized || _isDisposed || _hQuery == IntPtr.Zero)
@@ -130,28 +133,34 @@ namespace PreySense.Core.Services
                 coreMhz = new int[_coreCounters.Count];
                 double totalMhz = 0;
                 int max = 0;
+                int eMax = 0;
 
                 for (int i = 0; i < _coreCounters.Count; i++)
                 {
                     var (hCounter, coreIndex, nominalMhz) = _coreCounters[i];
                     uint valStatus = PdhGetFormattedCounterValue(hCounter, PDH_FMT_DOUBLE, out _, out var val);
 
+                    int mhz;
                     if (valStatus == ERROR_SUCCESS && val.CStatus == ERROR_SUCCESS)
                     {
                         // Frequency (MHz) ≈ Nominal MHz * (Performance % / 100)
                         double perfPercent = val.doubleValue;
-                        int mhz = (int)Math.Round(nominalMhz * (perfPercent / 100.0));
-                        coreMhz[i] = mhz;
-                        if (mhz > max) max = mhz;
+                        mhz = (int)Math.Round(nominalMhz * (perfPercent / 100.0));
                         totalMhz += mhz;
                     }
                     else
                     {
-                        coreMhz[i] = (int)nominalMhz;
+                        mhz = (int)nominalMhz;
                     }
+
+                    coreMhz[i] = mhz;
+                    if (mhz > max) max = mhz;
+                    if (coreIndex < _isECore.Length && _isECore[coreIndex] && mhz > eMax)
+                        eMax = mhz;
                 }
 
                 maxMhz = max;
+                eCoreMaxMhz = eMax;
                 avgMhz = _coreCounters.Count > 0 ? (int)Math.Round(totalMhz / _coreCounters.Count) : 0;
                 return true;
             }
@@ -161,6 +170,77 @@ namespace PreySense.Core.Services
                 return false;
             }
         }
+
+        private static bool[] BuildECoreMap(int logicalCount)
+        {
+            var isECore = new bool[Math.Max(0, logicalCount)];
+            if (logicalCount <= 0)
+                return isECore;
+
+            uint length = 0;
+            GetLogicalProcessorInformationEx(RelationProcessorCore, IntPtr.Zero, ref length);
+            if (length == 0)
+                return isECore;
+
+            IntPtr buffer = Marshal.AllocHGlobal((int)length);
+            try
+            {
+                if (!GetLogicalProcessorInformationEx(RelationProcessorCore, buffer, ref length))
+                    return isECore;
+
+                byte minClass = byte.MaxValue;
+                byte maxClass = 0;
+                var cores = new List<(byte Efficiency, ushort Group, ulong Mask)>();
+                int offset = 0;
+                while (offset + 32 <= (int)length)
+                {
+                    int size = Marshal.ReadInt32(buffer, offset + 4);
+                    if (size < 32)
+                        break;
+
+                    byte efficiency = Marshal.ReadByte(buffer, offset + 9);
+                    ushort groupCount = (ushort)Marshal.ReadInt16(buffer, offset + 30);
+                    int maskOffset = offset + 32;
+                    for (int g = 0; g < groupCount && maskOffset + 16 <= offset + size; g++)
+                    {
+                        ulong mask = (ulong)Marshal.ReadInt64(buffer, maskOffset);
+                        ushort group = (ushort)Marshal.ReadInt16(buffer, maskOffset + 8);
+                        cores.Add((efficiency, group, mask));
+                        if (efficiency < minClass) minClass = efficiency;
+                        if (efficiency > maxClass) maxClass = efficiency;
+                        maskOffset += 16;
+                    }
+
+                    offset += size;
+                }
+
+                if (minClass == maxClass)
+                    return isECore;
+
+                foreach (var core in cores)
+                {
+                    if (core.Efficiency != minClass || core.Group != 0)
+                        continue;
+
+                    for (int bit = 0; bit < 64 && bit < logicalCount; bit++)
+                    {
+                        if ((core.Mask & (1UL << bit)) != 0)
+                            isECore[bit] = true;
+                    }
+                }
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
+
+            return isECore;
+        }
+
+        private const int RelationProcessorCore = 0;
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetLogicalProcessorInformationEx(int relationship, IntPtr buffer, ref uint returnedLength);
 
         public void Dispose()
         {

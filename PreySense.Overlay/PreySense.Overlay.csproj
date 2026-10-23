@@ -18,8 +18,5 @@
     <ProjectReference Include="..\PreySense.Core\PreySense.Core.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.4" />
-  </ItemGroup>
 
 </Project>

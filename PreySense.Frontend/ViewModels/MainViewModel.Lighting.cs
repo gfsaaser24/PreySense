@@ -303,6 +303,8 @@ namespace PreySense.Frontend.ViewModels
         {
             if (!Enum.TryParse<CustomEffectMode>(effectModeStr, out var effect) || effect == CustomEffectMode.None)
                 return;
+            if (effect is CustomEffectMode.CpuHeatmap or CustomEffectMode.BatteryFuelGauge)
+                return;
 
             var c = ColorTranslator.FromHtml(SelectedHexColor);
             byte scaledBrightness = (byte)Math.Clamp(RgbBrightness, 0, 100);
@@ -311,8 +313,6 @@ namespace PreySense.Frontend.ViewModels
             ActiveEffectName = effect switch
             {
                 CustomEffectMode.RainbowCycle => "Rainbow Cycle",
-                CustomEffectMode.CpuHeatmap => "CPU Heatmap",
-                CustomEffectMode.BatteryFuelGauge => "Battery Fuel Gauge",
                 CustomEffectMode.PoliceStrobe => "Police Strobe",
                 CustomEffectMode.FireEmber => "Fire Ember",
                 CustomEffectMode.MatrixCascade => "Matrix Cascade",
@@ -1066,7 +1066,7 @@ namespace PreySense.Frontend.ViewModels
                 return true;
             return tag.StartsWith("DYN:", StringComparison.Ordinal) &&
                    Enum.TryParse<CustomEffectMode>(tag.AsSpan(4), out var effect) &&
-                   effect != CustomEffectMode.None;
+                   effect is not (CustomEffectMode.None or CustomEffectMode.CpuHeatmap or CustomEffectMode.BatteryFuelGauge);
         }
 
         private static bool IsValidZonePreset(string preset) => preset is

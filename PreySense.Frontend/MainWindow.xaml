@@ -7,23 +7,13 @@
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
-      <Grid Row="0" Style="{DynamicResource WindowTitleBarStyle}" MouseDown="TitleBar_MouseDown">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
-        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
-          <Image Source="pack://application:,,,/appicon.ico" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Center" />
-          <TextBlock Text="PreySense" Style="{DynamicResource WindowTitleTextStyle}"/>
-          <TextBlock Text=" • v2.2.5" Style="{DynamicResource WindowSubtitleTextStyle}"/>
-        </StackPanel>
-        <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Stretch">
+      <controls:WindowTitleBar Grid.Row="0" Subtitle="v2.3.0">
+        <controls:WindowTitleBar.Actions>
           <Button AutomationProperties.AutomationId="BtnSettings" Style="{StaticResource TitleBarButtonStyle}" Click="SettingsButton_Click">
             <controls:ThemedIcon Source="pack://application:,,,/Resources/icons8-settings-32.png" Width="14" Height="14" />
           </Button>
-          <Button AutomationProperties.AutomationId="BtnClose" Style="{StaticResource TitleBarCloseButtonStyle}" Content="✕" FontSize="{DynamicResource FontSizeTitle}" Click="CloseButton_Click" />
-        </StackPanel>
-      </Grid>
+        </controls:WindowTitleBar.Actions>
+      </controls:WindowTitleBar>
       <StackPanel Grid.Row="1" Margin="{StaticResource WindowContentMargin}">
         <Border Style="{StaticResource OriginalSectionPanelStyle}">
           <StackPanel>
@@ -281,14 +271,7 @@
                         Padding="24,4"
                         FontSize="{DynamicResource FontSizeTile}"
                         ItemsSource="{Binding AvailableRefreshRates}"
-                        SelectedItem="{Binding SelectedRefreshRateOption, Mode=TwoWay}">
-                <ComboBox.ItemContainerStyle>
-                  <Style TargetType="{x:Type ComboBoxItem}" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
-                    <Setter Property="HorizontalAlignment" Value="Stretch" />
-                    <Setter Property="HorizontalContentAlignment" Value="Center" />
-                  </Style>
-                </ComboBox.ItemContainerStyle>
-              </ComboBox>
+                        SelectedItem="{Binding SelectedRefreshRateOption, Mode=TwoWay}"/>
             </Grid>
           </StackPanel>
         </Border>
@@ -394,8 +377,14 @@
             </StackPanel>
           </Button>
         </UniformGrid>
-        <UniformGrid Grid.Row="2" Columns="2" HorizontalAlignment="Stretch">
-          <Button AutomationProperties.AutomationId="BtnNavAdvanced" Style="{StaticResource WindowFooterButtonStyle}" Click="ModeSettingsButton_Click">
+        <UniformGrid Grid.Row="2" Columns="3" HorizontalAlignment="Stretch">
+          <Button AutomationProperties.AutomationId="BtnNavMode" Style="{StaticResource WindowFooterButtonStyle}" Click="ModeSettingsButton_Click">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+              <controls:ThemedIcon Source="pack://application:,,,/Resources/icons8-processor-32.png" Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center" />
+              <TextBlock Text="Tuning" FontSize="{DynamicResource FontSizeBody}" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button AutomationProperties.AutomationId="BtnNavAdvanced" Style="{StaticResource WindowFooterButtonStyle}" Click="AdvancedButton_Click">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
               <controls:ThemedIcon Source="pack://application:,,,/Resources/icons8-controls-32.png" Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center" />
               <TextBlock Text="Advanced" FontSize="{DynamicResource FontSizeBody}" VerticalAlignment="Center" />

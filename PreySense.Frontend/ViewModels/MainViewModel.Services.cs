@@ -102,6 +102,7 @@ namespace PreySense.Frontend.ViewModels
                 }
                 else
                 {
+                    IsRunOnStartupEnabled = StartupTaskService.IsStartupEnabled();
                     StatusMessage = "Startup config failed: check permissions";
                 }
             }

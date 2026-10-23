@@ -4,6 +4,13 @@ using PreySense.Mode;
 
 namespace PreySense.Core.Services
 {
+    public enum PowerSourceKind
+    {
+        Battery = 0,
+        Ac = 1,
+        UsbC = 4
+    }
+
     public readonly record struct HardwareTelemetry(
         int CpuTemp,
         int GpuTemp,
@@ -14,7 +21,8 @@ namespace PreySense.Core.Services
         float BatteryPercent,
         bool IsAcConnected,
         int BatteryDischargeRateMw,
-        float CpuPkgPowerWatts = 0f
+        float CpuPkgPowerWatts = 0f,
+        PowerSourceKind PowerSource = PowerSourceKind.Ac
     );
 
     /// <summary>
@@ -25,6 +33,9 @@ namespace PreySense.Core.Services
     {
         // Telemetry
         HardwareTelemetry GetCurrentTelemetry();
+        PowerSourceKind GetPowerSource();
+        void NotePluggedSource(PowerSourceKind kind);
+        event EventHandler? PowerSourceChanged;
 
         // Power Profiles
         byte CurrentPowerMode { get; }

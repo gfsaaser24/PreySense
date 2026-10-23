@@ -91,6 +91,69 @@ namespace PreySense.Overlay
 
         public static string DefaultOverlayColumn(int oneBasedIndex) => oneBasedIndex switch
         {
+            1 => "Usage|Usage",
+            2 => "Temperature|Temperature",
+            3 => "P-Core|Clock",
+            4 => "E-Core|Voltage",
+            5 => "Power|Power",
+            6 => "Memory|Memory",
+            7 => "Memory Speed|Memory Speed",
+            8 => "Fan Speed|Fan Speed",
+            _ => "None|None"
+        };
+
+        public static (string Cpu, string Gpu) ParseOverlayColumn(string? stored)
+        {
+            if (string.IsNullOrWhiteSpace(stored))
+                return ("None", "None");
+
+            int split = stored.IndexOf('|');
+            if (split >= 0)
+                return (NormalizeMetric(stored[..split]), NormalizeMetric(stored[(split + 1)..]));
+
+            return stored switch
+            {
+                "Usage" => ("Usage", "Usage"),
+                "Temperature" => ("Temperature", "Temperature"),
+                "Clock" => ("P-Core", "Clock"),
+                "Voltage" => ("E-Core", "Voltage"),
+                "Power" => ("Power", "Power"),
+                "Memory" => ("Memory", "Memory"),
+                "Memory Speed" => ("Memory Speed", "Memory Speed"),
+                "Fan Speed" => ("Fan Speed", "Fan Speed"),
+                "None" => ("None", "None"),
+                _ => ("None", "None")
+            };
+        }
+
+        public static void EnsureDefaultOverlayColumns()
+        {
+            if (Get("overlay_col_defaults", 0) >= 3)
+                return;
+
+            bool untouched = true;
+            var current = new string[8];
+            for (int i = 1; i <= 8; i++)
+            {
+                current[i - 1] = GetString($"overlay_col_{i}");
+                if (!string.IsNullOrEmpty(current[i - 1]) && current[i - 1] != LegacyDefaultColumn(i))
+                    untouched = false;
+            }
+
+            for (int i = 1; i <= 8; i++)
+            {
+                string key = $"overlay_col_{i}";
+                if (untouched || string.IsNullOrEmpty(current[i - 1]))
+                    Set(key, DefaultOverlayColumn(i));
+                else if (!current[i - 1].Contains('|'))
+                    Set(key, MigrateLegacyColumn(current[i - 1]));
+            }
+
+            Set("overlay_col_defaults", 3);
+        }
+
+        private static string LegacyDefaultColumn(int oneBasedIndex) => oneBasedIndex switch
+        {
             1 => "Usage",
             2 => "Temperature",
             3 => "Voltage",
@@ -102,20 +165,29 @@ namespace PreySense.Overlay
             _ => "None"
         };
 
-        public static void EnsureDefaultOverlayColumns()
+        private static string MigrateLegacyColumn(string value) => value switch
         {
-            if (Get("overlay_col_defaults", 1) >= 2)
-                return;
+            "Usage" => "Usage|Usage",
+            "Temperature" => "Temperature|Temperature",
+            "Clock" => "P-Core|Clock",
+            "Voltage" => "E-Core|Voltage",
+            "Power" => "Power|Power",
+            "Memory" => "Memory|Memory",
+            "Memory Speed" => "Memory Speed|Memory Speed",
+            "Fan Speed" => "Fan Speed|Fan Speed",
+            "None" => "None|None",
+            _ => "None|None"
+        };
 
-            for (int i = 1; i <= 8; i++)
+        private static string NormalizeMetric(string metric)
+        {
+            string trimmed = metric.Trim();
+            return trimmed switch
             {
-                string key = $"overlay_col_{i}";
-                string current = GetString(key);
-                if (string.IsNullOrEmpty(current) || (i >= 7 && current == "None"))
-                    Set(key, DefaultOverlayColumn(i));
-            }
-
-            Set("overlay_col_defaults", 2);
+                "Usage" or "Temperature" or "P-Core" or "E-Core" or "Clock" or "Voltage"
+                    or "Power" or "Memory" or "Memory Speed" or "Fan Speed" => trimmed,
+                _ => "None"
+            };
         }
     }
 }

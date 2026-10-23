@@ -1,7 +1,6 @@
 using System;
 using System.ComponentModel;
 using System.Windows;
-using System.Windows.Input;
 using PreySense.Core.Acpi;
 using PreySense.Frontend.Controls;
 using PreySense.Frontend.ViewModels;
@@ -45,19 +44,6 @@ namespace PreySense.Frontend.Views
             }
 
             LoadModeData();
-        }
-
-        private void TitleBar_MouseDown(object sender, MouseButtonEventArgs e)
-        {
-            if (e.ChangedButton == MouseButton.Left)
-            {
-                DragMove();
-            }
-        }
-
-        private void CloseButton_Click(object sender, RoutedEventArgs e)
-        {
-            Close();
         }
 
         private void ComboModeSelect_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)

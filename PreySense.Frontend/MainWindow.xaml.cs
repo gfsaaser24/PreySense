@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
-using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Threading;
 using PreySense.Core.Services;
@@ -305,14 +304,6 @@ namespace PreySense.Frontend
             Top = Math.Max(workArea.Top + 40, workArea.Top + (workArea.Height - h) / 2);
         }
 
-        private void TitleBar_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
-        {
-            if (e.ChangedButton == System.Windows.Input.MouseButton.Left)
-            {
-                DragMove();
-            }
-        }
-
         private void MinimizeButton_Click(object sender, RoutedEventArgs e)
         {
             WindowState = WindowState.Minimized;
@@ -334,6 +325,16 @@ namespace PreySense.Frontend
                 vm.EnsureGpuHardwareInitialized();
 
             ShowModeSettingsWindow();
+        }
+
+        private void AdvancedButton_Click(object sender, RoutedEventArgs e)
+        {
+            var window = new Views.AdvancedWindow
+            {
+                Owner = this,
+                DataContext = DataContext
+            };
+            window.ShowDialog();
         }
 
         private Views.ModeSettingsWindow CreateModeSettingsWindow()
@@ -390,11 +391,6 @@ namespace PreySense.Frontend
                 DataContext = DataContext
             };
             win.ShowDialog();
-        }
-
-        private void CloseButton_Click(object sender, RoutedEventArgs e)
-        {
-            Close();
         }
 
         private void QuitButton_Click(object sender, RoutedEventArgs e)

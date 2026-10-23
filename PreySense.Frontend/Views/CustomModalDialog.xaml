@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:controls="clr-namespace:PreySense.Frontend.Controls"
         mc:Ignorable="d"
         Title="PreySense"
         Width="440"
@@ -42,20 +43,7 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <Grid Grid.Row="0" Style="{DynamicResource WindowTitleBarStyle}" Height="32" MouseDown="TitleBar_MouseDown">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
-                    <Image Source="pack://application:,,,/appicon.ico" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                    <TextBlock Text="PreySense" Style="{DynamicResource WindowTitleTextStyle}"/>
-                    <TextBlock x:Name="HeaderSubtitleText" Style="{DynamicResource WindowSubtitleTextStyle}"/>
-                </StackPanel>
-
-                <Button Grid.Column="1" Style="{DynamicResource TitleBarCloseButtonStyle}" Content="✕" FontSize="{DynamicResource FontSizeTitle}" Click="CancelButton_Click"/>
-            </Grid>
+            <controls:WindowTitleBar x:Name="HeaderBar" Grid.Row="0" CloseClick="CancelButton_Click"/>
 
             <StackPanel Grid.Row="1" Margin="{StaticResource WindowContentMargin}">
                 <TextBlock x:Name="MessageText"

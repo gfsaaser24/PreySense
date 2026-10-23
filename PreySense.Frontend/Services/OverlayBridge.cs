@@ -25,11 +25,12 @@ internal static class OverlayBridge
 
     public static bool ShouldRun => AppConfig.ShouldRunOverlay();
 
-    public static void Warmup()
-    {
-        EnsureInitialized();
-        HardwareOverlayManager.Warmup();
-    }
+        public static void Warmup()
+        {
+            System.Threading.ThreadPool.QueueUserWorkItem(_ => HardwareControl.Warmup());
+            EnsureInitialized();
+            HardwareOverlayManager.Warmup();
+        }
 
     public static void Start()
     {

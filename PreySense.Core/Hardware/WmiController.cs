@@ -3,6 +3,7 @@ using System.Management;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using PreySense;
+using PreySense.Core.Services;
 using PreySense.Mode;
 using PreySense.Rgb;
 
@@ -15,7 +16,11 @@ namespace PreySense.Helpers
         private ManagementObject? _cachedObj;
         private ManagementObject? _cachedApgeObj;
         private ManagementObject? _cachedBatteryObj;
+        private ManagementEventWatcher? _powerSourceWatcher;
         private readonly object _lock = new();
+        private int _pluggedSource = -1;
+
+        public event EventHandler? PowerSourceChanged;
 
         [DllImport("powrprof.dll")]
         private static extern uint PowerSetActiveOverlayScheme(Guid scheme);
@@ -208,6 +213,82 @@ namespace PreySense.Helpers
             onAc = true;
             batteryPercent = 80f;
             return false;
+        }
+
+        public PowerSourceKind ReadPowerSource()
+        {
+            TryGetPowerStatus(out bool onAc, out _);
+            if (!onAc)
+                return PowerSourceKind.Battery;
+
+            return Volatile.Read(ref _pluggedSource) == (int)PowerSourceKind.UsbC
+                ? PowerSourceKind.UsbC
+                : PowerSourceKind.Ac;
+        }
+
+        public void NotePluggedSource(PowerSourceKind kind)
+        {
+            if (kind is not (PowerSourceKind.Ac or PowerSourceKind.UsbC))
+                return;
+
+            Interlocked.CompareExchange(ref _pluggedSource, (int)kind, -1);
+        }
+
+        public void StartPowerSourceWatch()
+        {
+            try
+            {
+                var watcher = new ManagementEventWatcher(new ManagementScope(@"root\wmi"), new WqlEventQuery("SELECT * FROM APGeEvent"));
+                watcher.EventArrived += OnAcerPowerEvent;
+                watcher.Start();
+                _powerSourceWatcher = watcher;
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"Power source watch: {ex.Message}");
+            }
+        }
+
+        public static bool TryParseAcerPowerEvent(byte[]? detail, out PowerSourceKind source)
+        {
+            source = default;
+            if (detail == null || detail.Length < 2 || detail[0] != 8)
+                return false;
+
+            switch (detail[1])
+            {
+                case 0:
+                    source = PowerSourceKind.Battery;
+                    return true;
+                case 1:
+                    source = PowerSourceKind.Ac;
+                    return true;
+                case 4:
+                    source = PowerSourceKind.UsbC;
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private void OnAcerPowerEvent(object sender, EventArrivedEventArgs e)
+        {
+            try
+            {
+                if (e.NewEvent?["EventDetail"] is not byte[] detail ||
+                    !TryParseAcerPowerEvent(detail, out PowerSourceKind source))
+                    return;
+
+                if (source is PowerSourceKind.Ac or PowerSourceKind.UsbC)
+                    Volatile.Write(ref _pluggedSource, (int)source);
+
+                AppLogger.Log($"Acer power source event: {source}.");
+                PowerSourceChanged?.Invoke(this, EventArgs.Empty);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"Acer power source event: {ex.Message}");
+            }
         }
 
         public void SetRgbMode(int mode, byte r, byte g, byte b, byte brightness, byte speed, byte direction)
@@ -866,6 +947,14 @@ namespace PreySense.Helpers
 
         public void Dispose()
         {
+            if (_powerSourceWatcher != null)
+            {
+                _powerSourceWatcher.EventArrived -= OnAcerPowerEvent;
+                try { _powerSourceWatcher.Stop(); } catch { }
+                _powerSourceWatcher.Dispose();
+                _powerSourceWatcher = null;
+            }
+
             lock (_lock)
             {
                 _cachedObj?.Dispose();

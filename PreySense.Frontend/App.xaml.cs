@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 
@@ -123,6 +124,7 @@ namespace PreySense.Frontend
 
             var mainWindow = new MainWindow();
             MainWindow = mainWindow;
+            _ = Task.Run(Services.StartupTaskService.RepairLogonTask);
 
             _ = Services.UpdateCheckService.CheckForUpdatesAsync();
 
