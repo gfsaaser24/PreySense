@@ -1,4 +1,5 @@
 using System;
+using System.Management;
 using System.Runtime.InteropServices;
 using System.Text;
 using PreySense;
@@ -187,6 +188,40 @@ namespace PreySense.Helpers
                 SetupDiDestroyDeviceInfoList(devInfoSet);
             }
             return success;
+        }
+
+        /// <summary>
+        /// True when NVIDIA is the running display adapter and the Intel or AMD GPU is not.
+        /// A BIOS dGPU-only boot leaves the iGPU in Device Manager with Availability Off Line.
+        /// </summary>
+        public static bool IsDiscreteGpuOnlyDisplay()
+        {
+            try
+            {
+                bool integratedRunning = false;
+                bool discreteRunning = false;
+                using var searcher = new ManagementObjectSearcher("SELECT PNPDeviceID, Availability FROM Win32_VideoController");
+                foreach (ManagementObject gpu in searcher.Get())
+                {
+                    string id = (gpu["PNPDeviceID"] as string ?? "").ToUpperInvariant();
+                    bool running = Convert.ToInt32(gpu["Availability"] ?? 0) == 3;
+                    if (id.Contains("VEN_8086") || id.Contains("VEN_1002"))
+                        integratedRunning |= running;
+                    else if (id.Contains("VEN_10DE"))
+                        discreteRunning |= running;
+                }
+
+                if (discreteRunning || integratedRunning)
+                    return discreteRunning && !integratedRunning;
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"IsDiscreteGpuOnlyDisplay failed: {ex.Message}");
+            }
+
+            bool hasIntegrated = HasPresentDisplayDevice("VEN_8086") || HasPresentDisplayDevice("VEN_1002");
+            bool hasDiscrete = HasPresentDisplayDevice("VEN_10DE");
+            return hasDiscrete && !hasIntegrated;
         }
 
         public static bool HasPresentDisplayDevice(string hardwareIdSubstring)

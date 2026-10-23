@@ -38,16 +38,17 @@ Developed and verified on the **Acer Predator Helios Neo 16S (`PHN16S-71-98RF`)*
 
 ## Features
 
-- **Performance modes** — Quiet (AC) / Eco (battery), Balanced, Performance, and Turbo, including the chassis Mode / Turbo key
+- **Performance modes** — Quiet (AC) / Eco (battery), Balanced, Performance, and Turbo. The Predator key next to Num Lock opens PreySense from the tray, or hides it when it is already open. Hold that key and press 1–5 to change mode: 1 Eco, 2 Quiet, 3 Balanced, 4 Performance, 5 Turbo. The chassis Mode / Turbo key still cycles modes.
 - **Per-mode CPU and GPU power** — watt and thermal limits for each performance mode (requires OpenCore)
 - **GPU display switching** — Optimus, Automatic, Advanced Optimus (no reboot), and dGPU Only (reboot)
 - **Fans** — Auto, Max, or custom CPU/GPU speed, independent of the performance mode
-- **Lighting** — four-zone keyboard and cover logo, hardware effects, custom animations (Rainbow Cycle, CPU Heatmap, Battery Fuel Gauge, Police Strobe, Fire Ember, Matrix Cascade, Cylon Scanner, Aurora Drift, Ocean Tide, Heartbeat, Lightning Storm, Starlight, Ice Crystal), optional logo sync
+- **Lighting** — four-zone keyboard and cover logo, hardware effects, custom animations (Rainbow Cycle, Police Strobe, Fire Ember, Matrix Cascade, Cylon Scanner, Aurora Drift, Ocean Tide, Heartbeat, Lightning Storm, Starlight, Ice Crystal), optional logo sync
 - **Game profiles** — apply a mode and power limits when a watched game starts; restore when it exits
 - **Hardware overlay** — always-on-top CPU/GPU stats, optional graphs, and FPS
 - **Display** — refresh rate, LCD overdrive, BlueLight Shield
-- **Battery** — 80% charge limit and USB power-off charging cutoff
-- **Startup and tray** — run on Windows startup, hide to the tray, Predator key to show or hide
+- **Battery** — charge limit and USB power-off charging cutoff. The embedded controller only accepts 80% or 100%. PreySense cannot set any other charge limit.
+- **Startup and tray** — run on Windows startup, hide to the tray, Predator key (next to Num Lock) to show or hide
+- **Languages** — English, Simplified Chinese, Hindi, Spanish, and French
 - **OpenCore installer** — optional boot-drive or USB install from Settings for live power limits
 
 ## Requirements

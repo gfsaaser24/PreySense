@@ -50,7 +50,7 @@ namespace PreySense.Frontend.ViewModels
             };
 
             IsFactoryCalibrationRunning = true;
-            FactoryCalibrationStatus = "Reading Eco...";
+            FactoryCalibrationStatus = Services.LocalizationService.Format("Reading {0}...", Services.LocalizationService.Translate("Eco"));
             App.SuppressAutoHide = true;
             var dialog = new Views.CustomModalDialog
             {
@@ -58,7 +58,7 @@ namespace PreySense.Frontend.ViewModels
                     ?? Application.Current.MainWindow,
                 Title = "PreySense • Factory Power Limits",
                 HeaderSubtitle = " • Factory Power Limits",
-                Message = "Reading Eco...",
+                Message = FactoryCalibrationStatus,
                 ConfirmText = "OK",
                 ConfirmEnabled = false,
                 ShowCancelButton = false
@@ -68,7 +68,7 @@ namespace PreySense.Frontend.ViewModels
             {
                 foreach (var entry in modes)
                 {
-                    string reading = $"Reading {entry.Name}...";
+                    string reading = Services.LocalizationService.Format("Reading {0}...", Services.LocalizationService.Translate(entry.Name));
                     FactoryCalibrationStatus = reading;
                     if (dialog.IsVisible)
                         dialog.Message = reading;
@@ -118,11 +118,17 @@ namespace PreySense.Frontend.ViewModels
                 _factoryPowerProfile = new FactoryPowerProfileSnapshot(cpu, gpu, originalMode, anyCpu, anyGpu, anyTrip, anyTau);
                 IsFactoryCalibrationComplete = IsPlatformLimitCalibrated && calibratedMask == 0x1F;
                 SaveFactoryCalibrationToRegistry(calibratedMask);
-                string missing = unavailable.Count == 0 ? string.Empty : $" Unavailable: {string.Join(", ", unavailable)}; run again on the other power source.";
-                string tau = anyTau ? string.Empty : " Tau is missing from the loaded PREYDEV schema; reinstall the current OpenCore package and reboot.";
+                string missing = unavailable.Count == 0
+                    ? string.Empty
+                    : Services.LocalizationService.Format(
+                        " Unavailable: {0}; run again on the other power source.",
+                        string.Join(", ", unavailable.Select(Services.LocalizationService.Translate)));
+                string tau = anyTau
+                    ? string.Empty
+                    : Services.LocalizationService.Translate(" Tau is missing from the loaded PREYDEV schema; reinstall the current OpenCore package and reboot.");
                 FactoryCalibrationStatus = completed.Count == 0
-                    ? "No firmware profiles could be read."
-                    : $"Saved: {string.Join(", ", completed)}.{missing}{tau}";
+                    ? Services.LocalizationService.Translate("No firmware profiles could be read.")
+                    : Services.LocalizationService.Format("Saved: {0}.", string.Join(", ", completed.Select(Services.LocalizationService.Translate))) + missing + tau;
                 StatusMessage = FactoryCalibrationStatus;
                 if (dialog.IsVisible && _factoryPowerProfile != null)
                 {
@@ -132,7 +138,7 @@ namespace PreySense.Frontend.ViewModels
             }
             catch (Exception ex)
             {
-                FactoryCalibrationStatus = $"Calibration failed: {ex.Message}";
+                FactoryCalibrationStatus = Services.LocalizationService.Format("Calibration failed: {0}", ex.Message);
                 AppLogger.Log($"[MainViewModel] Factory calibration failed: {ex}");
                 if (dialog.IsVisible)
                 {
@@ -169,7 +175,7 @@ namespace PreySense.Frontend.ViewModels
             if (!snapshot.TauReadFromFirmware)
             {
                 lines.Add(string.Empty);
-                lines.Add("Tau: unavailable (loaded PREYDEV schema is outdated)");
+                lines.Add(Services.LocalizationService.Translate("Tau: unavailable (loaded PREYDEV schema is outdated)"));
             }
 
             if (lines.Count > 0)
@@ -183,8 +189,10 @@ namespace PreySense.Frontend.ViewModels
         {
             if ((calibratedMask & modeBit) == 0)
                 return;
-            string tau = tauRead ? CpuPowerLimitConfiguration.FormatTauSelection(tauSeconds) : "n/a";
-            lines.Add($"{modeName}: CPU {pl1}/{pl2}W  •  Tau {tau}  •  GPU {gpuWatts}W  •  Trip Point {gpuTripCelsius}°C");
+            string tau = tauRead ? CpuPowerLimitConfiguration.FormatTauSelection(tauSeconds) : Services.LocalizationService.Translate("n/a");
+            lines.Add(Services.LocalizationService.Format(
+                "{0}: CPU {1}/{2}W  •  Tau {3}  •  GPU {4}W  •  Trip Point {5}°C",
+                Services.LocalizationService.Translate(modeName), pl1, pl2, tau, gpuWatts, gpuTripCelsius));
         }
 
         private static CpuPowerLimitConfiguration CopyCpuConfiguration(CpuPowerLimitConfiguration source) => new()
@@ -556,7 +564,7 @@ namespace PreySense.Frontend.ViewModels
             OnPropertyChanged(nameof(BootDriveActionText));
         }
 
-        public string BootDriveActionText => IsOpenCorePartitionPresent ? "Uninstall" : "Install";
+        public string BootDriveActionText => Services.LocalizationService.Translate(IsOpenCorePartitionPresent ? "Uninstall" : "Install");
 
         partial void OnIsAcpiOverrideEnabledChanged(bool value)
         {
@@ -641,6 +649,11 @@ namespace PreySense.Frontend.ViewModels
         {
             AcpiOverrideStatus = Services.LocalizationService.Translate(OpenCoreSecurityValidator.GetAcpiOverrideLabel(_openCoreIntegrationState));
             OnPropertyChanged(nameof(AcpiOverrideDisabledBannerText));
+            OnPropertyChanged(nameof(BootDriveActionText));
+            OnPropertyChanged(nameof(EcoOrQuietModeName));
+            OnPropertyChanged(nameof(UsbChargingDisplay));
+            UpdateModeName(ActivePowerMode);
+            Dts.RefreshLocalizedText();
         }
 
         [RelayCommand]
@@ -767,7 +780,7 @@ namespace PreySense.Frontend.ViewModels
                     .FirstOrDefault(drive => drive.IsReady && drive.DriveType == DriveType.Removable)?.RootDirectory.FullName;
                 var picker = new OpenFolderDialog
                 {
-                    Title = "Select the root of the USB drive",
+                    Title = Services.LocalizationService.Translate("Select the root of the USB drive"),
                     Multiselect = false
                 };
                 if (!string.IsNullOrWhiteSpace(removableRoot))
@@ -787,16 +800,17 @@ namespace PreySense.Frontend.ViewModels
                     string driveRoot = Path.GetPathRoot(targetRoot) ?? string.Empty;
                     if (!string.Equals(targetRoot.TrimEnd(Path.DirectorySeparatorChar), driveRoot.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
                     {
-                        throw new InvalidOperationException("Select the USB drive itself, not a folder inside it.");
+                        throw new InvalidOperationException(Services.LocalizationService.Translate("Select the USB drive itself, not a folder inside it."));
                     }
 
                     var drive = new DriveInfo(driveRoot);
                     string warning = drive.DriveType == DriveType.Removable
-                        ? $"Install OpenCore to {driveRoot}?\nExisting EFI on that drive will be deleted."
-                        : $"{driveRoot} is not reported as removable. Install anyway? Existing EFI will be deleted.";
+                        ? Services.LocalizationService.Format("Install OpenCore to {0}?\nExisting EFI on that drive will be deleted.", driveRoot)
+                        : Services.LocalizationService.Format("{0} is not reported as removable. Install anyway? Existing EFI will be deleted.", driveRoot);
                     if (!string.Equals(drive.DriveFormat, "FAT32", StringComparison.OrdinalIgnoreCase))
                     {
-                        warning += $"{Environment.NewLine}{Environment.NewLine}The drive uses {drive.DriveFormat}; most UEFI firmware requires FAT32.";
+                        warning += Environment.NewLine + Environment.NewLine
+                            + Services.LocalizationService.Format("The drive uses {0}; most UEFI firmware requires FAT32.", drive.DriveFormat);
                     }
 
                     var dialog = new Views.CustomModalDialog

@@ -379,7 +379,7 @@ namespace PreySense.Frontend.Views
         {
             public string Id { get; } = id;
             public string Label { get; } = label;
-            public override string ToString() => Label;
+            public override string ToString() => LocalizationService.Translate(Label);
         }
 
         private void SaveOpacity()

@@ -902,15 +902,41 @@ namespace PreySense.Helpers
         public const int GpuMuxDiscrete = 2;
 
         /// <summary>
-        /// Stages the Acer hardware display mux via
-        /// AcerGamingFunction.SetGamingMiscSetting(((mode + 1) << 8) | 0x02).
-        /// Used only for dGPU Only, which then reboots. Does not write setup_var.
+        /// Stages the Acer hardware display mux via AcerGamingFunction.SetGamingMiscSetting.
+        /// Predator Sense GPU_MODE is 0 Optimus, 1 NVIDIA GPU only, 2 Automatic.
+        /// The WMI value is that mode plus one in the high byte, with function id 0x02.
+        /// PreySense stores Automatic=1 and Discrete=2, so those two are swapped before the call.
+        /// Used only for dGPU Only, which then reboots.
         /// </summary>
-        public bool SetGpuMuxMode(int mode)
+        public static ulong GpuMuxPayload(int mode)
         {
             mode = Math.Clamp(mode, 0, 2);
+            int predatorMode = mode switch
+            {
+                GpuMuxOptimus => 0,
+                GpuMuxAuto => 2,
+                _ => 1
+            };
+            return (ulong)(((predatorMode + 1) << 8) | 0x02);
+        }
 
-            ulong payload = (ulong)(((mode + 1) << 8) | 0x02);
+        public static int? GpuMuxFromFirmware(ulong gmOutput)
+        {
+            if ((gmOutput & 0xFF) != 0)
+                return null;
+
+            return (gmOutput >> 8) switch
+            {
+                1 => GpuMuxOptimus,
+                2 => GpuMuxDiscrete,
+                3 => GpuMuxAuto,
+                _ => null
+            };
+        }
+
+        public bool SetGpuMuxMode(int mode)
+        {
+            ulong payload = GpuMuxPayload(mode);
             var (acpiOk, _) = SendCommand(AcerWmi.GamingMethods.SetMiscSetting, payload);
             if (acpiOk)
             {
@@ -924,23 +950,12 @@ namespace PreySense.Helpers
 
         /// <summary>
         /// Reads the Acer hardware GPU mux via GetGamingMiscSetting(2).
-        /// Returns: 0 = Optimus, 1 = Automatic, 2 = NVIDIA GPU Only, or null.
+        /// Firmware byte 1 is Optimus, 2 is NVIDIA GPU only, 3 is Automatic.
         /// </summary>
         public int? GetGpuMuxModeWmi()
         {
             var (success, result) = SendCommand(AcerWmi.GamingMethods.GetMiscSetting, 0x02ul);
-            if (success)
-            {
-                ulong firmwareVal = result >> 8;
-                return firmwareVal switch
-                {
-                    1 => 0,
-                    2 => 1,
-                    3 => 2,
-                    _ => null
-                };
-            }
-            return null;
+            return success ? GpuMuxFromFirmware(result) : null;
         }
 
         #endregion

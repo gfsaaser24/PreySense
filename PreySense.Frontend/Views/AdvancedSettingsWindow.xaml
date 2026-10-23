@@ -40,10 +40,13 @@
 
                             <controls:SettingDropdownRow x:Name="LanguageSelector"
                                                          Title="Language"
-                                                         DropdownWidth="190"
+                                                         DropdownWidth="220"
                                                          SelectionChanged="LanguageSelector_SelectionChanged">
                                 <ComboBoxItem Content="English" Tag="en-US"/>
                                 <ComboBoxItem Content="Simplified Chinese" Tag="zh-CN"/>
+                                <ComboBoxItem Content="Hindi" Tag="hi-IN"/>
+                                <ComboBoxItem Content="Spanish" Tag="es-ES"/>
+                                <ComboBoxItem Content="French" Tag="fr-FR"/>
                             </controls:SettingDropdownRow>
 
                             <controls:SettingSwitchRow Title="Theme"

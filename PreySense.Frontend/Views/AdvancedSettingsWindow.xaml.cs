@@ -8,7 +8,7 @@ namespace PreySense.Frontend.Views
         public AdvancedSettingsWindow()
         {
             InitializeComponent();
-            LanguageSelector.SelectedIndex = Services.LocalizationService.IsChinese ? 1 : 0;
+            LanguageSelector.SelectedIndex = Services.LocalizationService.LanguageIndex;
             MaxHeight = SystemParameters.WorkArea.Height - 40;
                 SettingsScroll.MaxHeight = Math.Max(240, MaxHeight - 56);
         }

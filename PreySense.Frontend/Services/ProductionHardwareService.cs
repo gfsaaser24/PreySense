@@ -146,11 +146,8 @@ namespace PreySense.Frontend.Services
             {
                 if (_isBiosDiscreteGpuActive.HasValue)
                     return _isBiosDiscreteGpuActive.Value;
-                // When booted in Hardware BIOS Discrete GPU mode, the integrated GPU is disabled at POST
-                // and is not enumerated as a present display device in Windows.
-                bool hasIntegrated = DeviceHelper.HasPresentDisplayDevice("VEN_8086") || DeviceHelper.HasPresentDisplayDevice("VEN_1002");
-                bool hasDiscrete = DeviceHelper.HasPresentDisplayDevice("VEN_10DE");
-                return (_isBiosDiscreteGpuActive = !hasIntegrated && hasDiscrete).Value;
+                // BIOS dGPU only keeps the iGPU device node, but Windows reports it Off Line.
+                return (_isBiosDiscreteGpuActive = DeviceHelper.IsDiscreteGpuOnlyDisplay()).Value;
             }
         }
 

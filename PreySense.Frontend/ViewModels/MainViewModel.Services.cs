@@ -42,7 +42,9 @@ namespace PreySense.Frontend.ViewModels
         [NotifyPropertyChangedFor(nameof(IsUsbChargingEnabled))]
         [ObservableProperty] private int _usbChargingPercent = 0; // 0 (Off), 10, 20, 30
         public bool IsUsbChargingEnabled => UsbChargingPercent > 0;
-        public string UsbChargingDisplay => UsbChargingPercent == 0 ? "Disabled" : $"{UsbChargingPercent}% Battery Limit";
+        public string UsbChargingDisplay => UsbChargingPercent == 0
+            ? LocalizationService.Translate("Disabled")
+            : LocalizationService.Format("{0}% Battery Limit", UsbChargingPercent);
 
         private readonly UiDebouncer _usbChargingDebouncer = new(TimeSpan.FromMilliseconds(200));
 

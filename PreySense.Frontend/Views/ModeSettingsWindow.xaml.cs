@@ -267,13 +267,13 @@ namespace PreySense.Frontend.Views
         {
             if (DataContext is not MainViewModel vm || !vm.IsAcpiOverrideEnabled) return;
 
-            string modeName = GetSelectedModeName();
+            string modeName = Services.LocalizationService.Translate(GetSelectedModeName());
             var confirmation = new CustomModalDialog
             {
                 Owner = this,
                 Title = "PreySense • Reset Mode",
                 HeaderSubtitle = " • Reset Mode",
-                Message = $"Reset {modeName} to factory power settings and apply them now?",
+                Message = Services.LocalizationService.Format("Reset {0} to factory power settings and apply them now?", modeName),
                 ConfirmText = "Reset & Apply",
                 CancelText = "Cancel",
                 ShowCancelButton = true

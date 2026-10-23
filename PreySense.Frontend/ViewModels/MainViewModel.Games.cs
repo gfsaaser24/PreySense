@@ -175,8 +175,8 @@ namespace PreySense.Frontend.ViewModels
             {
                 var picker = new Microsoft.Win32.OpenFileDialog
                 {
-                    Title = "Select a game executable",
-                    Filter = "Game (*.exe)|*.exe",
+                    Title = LocalizationService.Translate("Select a game executable"),
+                    Filter = LocalizationService.Translate("Game") + " (*.exe)|*.exe",
                     CheckFileExists = true
                 };
                 if (picker.ShowDialog() != true)

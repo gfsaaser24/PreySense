@@ -31,11 +31,11 @@ Typical switch is a few seconds. Fullscreen exclusive apps can block it; PreySen
 Used only by **dGPU Only**:
 
 ```text
-SetGamingMiscSetting( ((mode + 1) << 8) | 0x02 )
+SetGamingMiscSetting( ((predatorMode + 1) << 8) | 0x02 )
   → ACPI WMBH → SMI 0xD0 → NVRAM display-mode byte
   → shutdown /r /t 2
 ```
 
-Firmware values 1 / 2 / 3 map back to UI 0 / 1 / 2 via `GetGamingMiscSetting(0x02)`. After reboot, PreySense treats BIOS dGPU-only as active when an Intel/AMD iGPU is missing and NVIDIA is present.
+Predator Sense `GPU_MODE` is 0 Optimus, 1 NVIDIA GPU only, 2 Automatic. PreySense stores Automatic as 1 and Discrete as 2, so those two are swapped before the call. NVIDIA GPU only is `0x202`. Firmware byte 1 / 2 / 3 is Optimus / NVIDIA GPU only / Automatic. After reboot, PreySense treats BIOS dGPU-only as active when an Intel/AMD iGPU is missing and NVIDIA is present.
 
 Insyde Setup offset for this byte on this chassis is `0x50` (see [BIOS offsets](bios_setup_var_offsets.md)).

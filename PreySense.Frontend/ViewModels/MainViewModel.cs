@@ -443,7 +443,7 @@ namespace PreySense.Frontend.ViewModels
             GC.SuppressFinalize(this);
         }
 
-        private string GetModeTitle(byte mode) => mode switch
+        private string GetModeTitle(byte mode) => LocalizationService.Translate(mode switch
         {
             0x00 => "Quiet",
             0x01 => "Balanced",
@@ -451,6 +451,6 @@ namespace PreySense.Frontend.ViewModels
             0x05 => "Turbo",
             0x06 => "Eco",
             _ => "Custom"
-        };
+        });
     }
 }

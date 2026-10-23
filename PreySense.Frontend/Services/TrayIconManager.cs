@@ -330,7 +330,7 @@ namespace PreySense.Frontend.Services
 
             AppendMenu(hMenu, MF_STRING, CMD_OPEN, "PreySense");
             AppendMenu(hMenu, MF_SEPARATOR, 0, string.Empty);
-            AppendMenu(hMenu, MF_STRING, CMD_QUIT, "Quit");
+            AppendMenu(hMenu, MF_STRING, CMD_QUIT, LocalizationService.Translate("Quit"));
 
             IntPtr menuBitmap = _hIcon != IntPtr.Zero ? CreateAlphaMenuBitmap(_hIcon) : IntPtr.Zero;
             if (menuBitmap != IntPtr.Zero)

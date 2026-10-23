@@ -5,6 +5,7 @@
   <Thickness x:Key="StandardRowMargin">0,4,0,4</Thickness>
   <Thickness x:Key="StandardSectionMargin">0,0,0,8</Thickness>
   <BooleanToVisibilityConverter x:Key="BoolToVis" />
+  <services:TranslateConverter xmlns:services="clr-namespace:PreySense.Frontend.Services" x:Key="TranslateConverter" />
 
   <Style TargetType="{x:Type controls:ThemedIcon}">
     <Setter Property="Foreground" Value="{DynamicResource IconForegroundBrush}" />

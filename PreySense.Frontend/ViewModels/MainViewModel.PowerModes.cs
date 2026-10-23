@@ -29,7 +29,7 @@ namespace PreySense.Frontend.ViewModels
         public bool IsPerformActive => ActivePowerMode == 4;
         public bool IsTurboActive => ActivePowerMode == 5;
         public bool IsEcoOrQuietActive => IsAcConnected ? IsQuietActive : (IsEcoActive || IsQuietActive);
-        public string EcoOrQuietModeName => IsAcConnected ? "Quiet" : "Eco";
+        public string EcoOrQuietModeName => Services.LocalizationService.Translate(IsAcConnected ? "Quiet" : "Eco");
         public string EcoOrQuietModeParam => IsAcConnected ? "0" : "6";
 
         public IReadOnlyList<string> SourceProfileNames => ProfileManager.SourceProfileNames;

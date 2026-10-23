@@ -3,6 +3,7 @@ using System.Threading;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using PreySense.Core.Audio;
+using PreySense.Frontend.Services;
 
 namespace PreySense.Frontend.ViewModels
 {
@@ -32,6 +33,13 @@ namespace PreySense.Frontend.ViewModels
 
         [ObservableProperty] private bool _isAvailable;
         [ObservableProperty] private string? _error;
+
+        public void RefreshLocalizedText()
+        {
+            OnPropertyChanged(nameof(Error));
+            foreach (DtsAudioEndpointViewModel endpoint in Endpoints)
+                endpoint.RefreshLocalizedTitle();
+        }
 
         public void Refresh()
         {
@@ -297,6 +305,7 @@ namespace PreySense.Frontend.ViewModels
         private readonly DtsAudioViewModel _owner;
         private bool _suppress;
         private int _appliedIndex;
+        private string _sourceTitle = "";
 
         public DtsAudioEndpointViewModel(DtsAudioEndpoint endpoint, DtsAudioViewModel owner)
         {
@@ -320,9 +329,12 @@ namespace PreySense.Frontend.ViewModels
 
         [ObservableProperty] private int _selectedPresetIndex;
 
+        public void RefreshLocalizedTitle() => Title = LocalizationService.Translate(_sourceTitle);
+
         public void Apply(DtsAudioEndpoint endpoint)
         {
-            Title = endpoint.Title;
+            _sourceTitle = endpoint.Title;
+            Title = LocalizationService.Translate(_sourceTitle);
             int index = DtsAudioPreset.MenuIndex(endpoint.Preset, endpoint.Automatic);
             _appliedIndex = index;
             if (SelectedPresetIndex == index)

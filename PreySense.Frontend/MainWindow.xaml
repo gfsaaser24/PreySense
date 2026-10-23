@@ -7,7 +7,7 @@
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
-      <controls:WindowTitleBar Grid.Row="0" Subtitle="v2.3.0">
+      <controls:WindowTitleBar Grid.Row="0" Subtitle="v2.3.1">
         <controls:WindowTitleBar.Actions>
           <Button AutomationProperties.AutomationId="BtnSettings" Style="{StaticResource TitleBarButtonStyle}" Click="SettingsButton_Click">
             <controls:ThemedIcon Source="pack://application:,,,/Resources/icons8-settings-32.png" Width="14" Height="14" />
@@ -148,7 +148,7 @@
                 <Run Text=" RPM" />
               </TextBlock>
             </Grid>
-            <UniformGrid Columns="4" Rows="1" Margin="0,2,0,2">
+            <UniformGrid Columns="{Binding GpuModeTileColumns}" Rows="1" Margin="0,2,0,2">
               <Button Height="62" Margin="3" CommandParameter="1" Command="{Binding SetGpuMuxModeCommand}">
                 <FrameworkElement.Style>
                   <Style BasedOn="{StaticResource OriginalRButtonActionStyle}" TargetType="{x:Type Button}">
@@ -166,7 +166,7 @@
                   <TextBlock Text="Auto" FontSize="{DynamicResource FontSizeTile}" HorizontalAlignment="Center" TextAlignment="Center" />
                 </StackPanel>
               </Button>
-              <Button Height="62" Margin="3" CommandParameter="0" Command="{Binding SetGpuMuxModeCommand}">
+              <Button Height="62" Margin="3" CommandParameter="0" Command="{Binding SetGpuMuxModeCommand}" Visibility="{Binding ShowDdsGpuTiles, Converter={StaticResource BoolToVis}}">
                 <FrameworkElement.Style>
                   <Style BasedOn="{StaticResource OriginalRButtonActionStyle}" TargetType="{x:Type Button}">
                     <Style.Triggers>
@@ -193,7 +193,7 @@
                   <TextBlock Text="Hybrid" FontSize="{DynamicResource FontSizeTile}" HorizontalAlignment="Center" TextAlignment="Center" />
                 </StackPanel>
               </Button>
-              <Button Height="62" Margin="3" CommandParameter="2" Command="{Binding SetGpuMuxModeCommand}">
+              <Button Height="62" Margin="3" CommandParameter="2" Command="{Binding SetGpuMuxModeCommand}" Visibility="{Binding ShowDdsGpuTiles, Converter={StaticResource BoolToVis}}">
                 <FrameworkElement.Style>
                   <Style BasedOn="{StaticResource OriginalRButtonActionStyle}" TargetType="{x:Type Button}">
                     <Style.Triggers>

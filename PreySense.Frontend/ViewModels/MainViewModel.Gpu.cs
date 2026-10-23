@@ -87,7 +87,12 @@ namespace PreySense.Frontend.ViewModels
         [NotifyPropertyChangedFor(nameof(IsGpuAutoActive))]
         [NotifyPropertyChangedFor(nameof(IsGpuNvidiaOnlyActive))]
         [NotifyPropertyChangedFor(nameof(IsGpuAdvancedOptimusActive))]
+        [NotifyPropertyChangedFor(nameof(ShowDdsGpuTiles))]
+        [NotifyPropertyChangedFor(nameof(GpuModeTileColumns))]
         private bool _isBiosDiscreteGpuActive;
+
+        public bool ShowDdsGpuTiles => !IsBiosDiscreteGpuActive;
+        public int GpuModeTileColumns => IsBiosDiscreteGpuActive ? 2 : 4;
 
         // GPU selection flags (0=Optimus, 1=Automatic, 2=NVIDIA Only)
         public bool IsGpuEnduranceActive => !IsBiosDiscreteGpuActive && ActiveGpuMuxMode == 0;
@@ -97,6 +102,12 @@ namespace PreySense.Frontend.ViewModels
         public bool IsGpuAutoActive => !IsBiosDiscreteGpuActive && ActiveGpuMuxMode == 1;
         public bool IsGpuNvidiaOnlyActive => !IsBiosDiscreteGpuActive && ActiveGpuMuxMode == 2;
         public bool IsGpuAdvancedOptimusActive => ActiveGpuMuxMode == 2 && !IsBiosDiscreteGpuActive;
+
+        partial void OnIsBiosDiscreteGpuActiveChanged(bool value)
+        {
+            if (value)
+                GpuMuxModeName = "dGPU Only";
+        }
 
         // dGPU Battery Sentinel
         public ObservableCollection<PreySense.Gpu.GpuProcessInfo> ActiveGpuProcesses { get; } = new();
@@ -187,6 +198,13 @@ namespace PreySense.Frontend.ViewModels
                 _ => -1
             };
             if (muxVal < 0 || muxVal > 2) return;
+
+            if (IsBiosDiscreteGpuActive)
+            {
+                if (muxVal == 1)
+                    await SetBiosGpuModeAsync(PreySense.Helpers.AcerWmi.GpuMux.Automatic, "Would you like to switch to Auto and restart now?", "PreySense • Auto", " • Auto");
+                return;
+            }
 
             await ApplyGpuMuxModeCoreAsync(muxVal, persistPreference: true);
         }
@@ -332,53 +350,38 @@ namespace PreySense.Frontend.ViewModels
             }
         }
 
-        private static Views.CustomModalDialog CreateDiscreteGpuModal()
-        {
-            return new Views.CustomModalDialog
-            {
-                Owner = System.Windows.Application.Current?.MainWindow,
-                Title = "PreySense • Hardware Discrete GPU",
-                HeaderSubtitle = " • Hardware Display MUX",
-                Message = "Would you like to switch to dGPU Only mode and restart now?",
-                ConfirmText = "Apply & Restart Now"
-            };
-        }
-
         [RelayCommand]
         public async Task SetBiosDiscreteGpuAsync()
         {
-            bool? dialogResult = false;
-            if (System.Windows.Application.Current?.Dispatcher != null && !System.Windows.Application.Current.Dispatcher.CheckAccess())
-            {
-                dialogResult = System.Windows.Application.Current.Dispatcher.Invoke(() =>
-                {
-                    var dialog = CreateDiscreteGpuModal();
-                    return dialog.ShowDialog();
-                });
-            }
-            else
-            {
-                var dialog = CreateDiscreteGpuModal();
-                dialogResult = dialog.ShowDialog();
-            }
+            if (IsBiosDiscreteGpuActive)
+                return;
 
-            if (dialogResult != true)
+            await SetBiosGpuModeAsync(
+                PreySense.Helpers.AcerWmi.GpuMux.Discrete,
+                "Would you like to switch to dGPU Only mode and restart now?",
+                "PreySense • Hardware Discrete GPU",
+                " • Hardware Display MUX");
+        }
+
+        private async Task SetBiosGpuModeAsync(int muxMode, string message, string title, string subtitle)
+        {
+            if (!ConfirmGpuRestart(message, title, subtitle))
                 return;
 
             IsBusy = true;
             try
             {
-                bool ok = await Task.Run(() => _hw.SetGpuMuxMode(PreySense.Helpers.AcerWmi.GpuMux.Discrete));
+                bool ok = await Task.Run(() => _hw.SetGpuMuxMode(muxMode));
                 if (ok)
                 {
-                    IsBiosDiscreteGpuActive = true;
+                    IsBiosDiscreteGpuActive = muxMode == PreySense.Helpers.AcerWmi.GpuMux.Discrete;
                     NotifyGpuSelectionsChanged();
-                    StatusMessage = "Hardware Discrete GPU set. Restarting system...";
-                    System.Diagnostics.Process.Start("shutdown.exe", "/r /t 2 /c \"PreySense: Applying Hardware Discrete GPU Mode\"");
+                    StatusMessage = "Restarting to apply the GPU mode...";
+                    RestartToApplyGpuMode();
                 }
                 else
                 {
-                    StatusMessage = "Failed to set Discrete GPU via Acer ACPI.";
+                    StatusMessage = "Failed to set the GPU mode via Acer ACPI.";
                 }
             }
             catch (Exception ex)
@@ -389,6 +392,53 @@ namespace PreySense.Frontend.ViewModels
             {
                 IsBusy = false;
             }
+        }
+
+        private static bool ConfirmGpuRestart(string message, string title, string subtitle)
+        {
+            if (System.Windows.Application.Current?.Dispatcher == null)
+                return false;
+
+            bool? dialogResult = false;
+            void Show()
+            {
+                App.SuppressAutoHide = true;
+                try
+                {
+                    var dialog = new Views.CustomModalDialog
+                    {
+                        Owner = System.Windows.Application.Current?.MainWindow,
+                        Title = title,
+                        HeaderSubtitle = subtitle,
+                        Message = message,
+                        ConfirmText = "Apply & Restart Now"
+                    };
+                    dialogResult = dialog.ShowDialog();
+                }
+                finally
+                {
+                    App.SuppressAutoHide = false;
+                }
+            }
+
+            if (System.Windows.Application.Current.Dispatcher.CheckAccess())
+                Show();
+            else
+                System.Windows.Application.Current.Dispatcher.Invoke(Show);
+
+            return dialogResult == true;
+        }
+
+        private static void RestartToApplyGpuMode()
+        {
+            // /t 0 and no comment. A delayed shutdown with /c opens a second Windows dialog.
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "shutdown.exe",
+                Arguments = "/r /t 0 /f",
+                CreateNoWindow = true,
+                UseShellExecute = false
+            });
         }
 
         public void SaveGpuLimitsToRegistry()

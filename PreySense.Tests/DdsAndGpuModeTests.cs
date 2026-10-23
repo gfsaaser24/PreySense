@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PreySense.Core.Services;
+using PreySense.Helpers;
 using PreySense.Gpu;
 
 namespace PreySense.Tests
@@ -9,6 +10,17 @@ namespace PreySense.Tests
     [TestClass]
     public class DdsAndGpuModeTests
     {
+        [TestMethod]
+        public void Test_BiosMux_Payload_Matches_PredatorSense_GpuMode()
+        {
+            Assert.AreEqual(0x102ul, WmiController.GpuMuxPayload(WmiController.GpuMuxOptimus));
+            Assert.AreEqual(0x202ul, WmiController.GpuMuxPayload(WmiController.GpuMuxDiscrete));
+            Assert.AreEqual(0x302ul, WmiController.GpuMuxPayload(WmiController.GpuMuxAuto));
+            Assert.AreEqual(WmiController.GpuMuxDiscrete, WmiController.GpuMuxFromFirmware(0x200));
+            Assert.AreEqual(WmiController.GpuMuxAuto, WmiController.GpuMuxFromFirmware(0x300));
+            Assert.AreEqual(WmiController.GpuMuxOptimus, WmiController.GpuMuxFromFirmware(0x100));
+        }
+
         [TestMethod]
         public void Test_MockHardwareService_DdsMethods()
         {
@@ -187,6 +199,23 @@ namespace PreySense.Tests
             Assert.IsFalse(vm.IsGpuAutoActive);
             Assert.IsFalse(vm.IsGpuOptimusActive);
             Assert.IsFalse(vm.IsGpuNvidiaOnlyActive);
+            Assert.IsFalse(vm.ShowDdsGpuTiles);
+            Assert.AreEqual(2, vm.GpuModeTileColumns);
+        }
+
+        [TestMethod]
+        public async System.Threading.Tasks.Task Test_BiosDiscrete_OtherModes_DoNotUseDds()
+        {
+            var hw = new MockHardwareService { IsBiosDiscreteGpuActive = true };
+            var vm = new PreySense.Frontend.ViewModels.MainViewModel(hw);
+
+            await vm.SetGpuMuxModeAsync(1);
+            await vm.SetGpuMuxModeAsync(0);
+            await vm.SetGpuMuxModeAsync(2);
+
+            Assert.AreEqual(0, hw.SetGpuMuxModeCallCount);
+            Assert.IsTrue(vm.IsBiosDiscreteGpuActive);
+            Assert.IsTrue(hw.GetDdsStatus()!.IsAutomatic);
         }
     }
 }

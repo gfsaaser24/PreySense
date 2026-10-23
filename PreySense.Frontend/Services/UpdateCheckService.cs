@@ -10,7 +10,7 @@ namespace PreySense.Frontend.Services
 {
     public static class UpdateCheckService
     {
-        public const string CurrentVersion = "2.3.0";
+        public const string CurrentVersion = "2.3.1";
         private const string LatestReleaseApi = "https://api.github.com/repos/hammadzaigham/PreySense/releases/latest";
         private const string ReleasesUrl = "https://github.com/hammadzaigham/PreySense/releases";
 
@@ -45,7 +45,7 @@ namespace PreySense.Frontend.Services
                         Owner = Application.Current.MainWindow,
                         Title = "PreySense — Update Available",
                         HeaderSubtitle = " — Update Available",
-                        Message = $"Version {latestTag} of PreySense is available.\n\nOpen GitHub to download it?",
+                        Message = LocalizationService.Format("Version {0} of PreySense is available.\n\nOpen GitHub to download it?", latestTag),
                         ConfirmText = "Open GitHub",
                         CancelText = "Cancel",
                         ShowCancelButton = true

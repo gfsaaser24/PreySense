@@ -45,7 +45,7 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
-                <TextBlock Text="{Binding Dts.Error}" FontSize="{DynamicResource FontSizeBody}" Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,4,0,0" TextWrapping="Wrap">
+                <TextBlock Text="{Binding Dts.Error, Converter={StaticResource TranslateConverter}}" FontSize="{DynamicResource FontSizeBody}" Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,4,0,0" TextWrapping="Wrap">
                     <TextBlock.Style>
                         <Style TargetType="TextBlock">
                             <Setter Property="Visibility" Value="Visible"/>
