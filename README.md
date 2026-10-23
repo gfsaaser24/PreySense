@@ -83,6 +83,7 @@ OpenCore is optional. Without it, modes, fans, lighting, GPU switching, and the 
    4. Repeat: `PREYSENSE` → `EFI` → `OC` → `Drivers` → `OpenRuntime.efi`
    5. Save and exit from BIOS. After restart, open BIOS again.
    6. Boot → put BOOTX64 first in the boot order. Save and exit.
+   7. After booting, OpenCore status should show Active. Calibrate Factory Limits in Advanced Tab. Enable ACPI Hardware Override.
 
 USB install is the same files on a FAT32 stick. Restart, press F12, and select the USB drive. Unplug it to boot stock Windows.
 
