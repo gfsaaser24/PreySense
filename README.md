@@ -48,7 +48,7 @@ Developed and verified on the **Acer Predator Helios Neo 16S (`PHN16S-71-98RF`)*
 - **Display** — refresh rate, LCD overdrive, BlueLight Shield
 - **Battery** — charge limit and USB power-off charging cutoff. The embedded controller only accepts 80% or 100%. PreySense cannot set any other charge limit.
 - **Startup and tray** — run on Windows startup, hide to the tray, Predator key (next to Num Lock) to show or hide
-- **Languages** — English, Simplified Chinese, Hindi, Spanish, and French
+- **Languages** — English, Hindi, Spanish, and French
 - **OpenCore installer** — optional boot-drive or USB install from Settings for live power limits
 
 ## Requirements
